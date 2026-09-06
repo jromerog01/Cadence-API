@@ -19,13 +19,6 @@ export type Transcription = {
   segments: TranscriptSegment[]
 }
 
-export type User = {
-  id: string
-  name: string
-  email: string
-  initials: string
-}
-
 export function formatDuration(totalSeconds: number | null): string {
   if (totalSeconds == null || Number.isNaN(totalSeconds)) return '--:--'
   const seconds = Math.round(totalSeconds)

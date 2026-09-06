@@ -1,23 +1,29 @@
 'use client'
 
-import { AudioLines } from 'lucide-react'
+import { AudioLines, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { User } from '@/lib/api/view-models'
+import type { AuthUser } from '@/lib/api/client'
 
 type View = 'upload' | 'library'
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  return parts
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('')
+}
 
 export function TopNav({
   view,
   onViewChange,
-  users,
-  activeUser,
-  onUserChange,
+  user,
+  onLogout,
 }: {
   view: View
   onViewChange: (v: View) => void
-  users: User[]
-  activeUser: User
-  onUserChange: (id: string) => void
+  user: AuthUser
+  onLogout: () => void
 }) {
   const tabs: { id: View; label: string }[] = [
     { id: 'upload', label: 'Subir audio' },
@@ -51,23 +57,20 @@ export function TopNav({
           ))}
         </nav>
 
-        <label className="flex items-center gap-2">
-          <span className="sr-only">Usuario activo</span>
+        <div className="flex items-center gap-2">
           <span className="flex size-8 items-center justify-center rounded-full bg-accent font-mono text-xs font-semibold text-accent-foreground">
-            {activeUser.initials}
+            {initialsOf(user.display_name)}
           </span>
-          <select
-            value={activeUser.id}
-            onChange={(e) => onUserChange(e.target.value)}
-            className="cursor-pointer rounded-md bg-transparent py-1 pr-1 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <span className="hidden text-sm font-medium sm:inline">{user.display_name}</span>
+          <button
+            onClick={onLogout}
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
+            className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            <LogOut className="size-4" />
+          </button>
+        </div>
       </div>
 
       <nav className="flex items-center gap-1 border-t border-border px-5 py-2 sm:hidden">

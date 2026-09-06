@@ -2,8 +2,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 VALID_STATUSES = ("queued", "processing", "done", "error")
 VALID_STAGES = ("normalizing", "transcribing", "diarizing")
 
@@ -21,6 +19,15 @@ class Segment:
 class TranscriptionInfo:
     detected_language: str
     duration_seconds: float
+
+
+@dataclass
+class User:
+    id: UUID
+    email: str
+    password_hash: str | None
+    display_name: str
+    is_active: bool = True
 
 
 @dataclass

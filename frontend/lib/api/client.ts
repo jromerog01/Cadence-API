@@ -35,6 +35,14 @@ export const ModelSchema = z.object({
 
 export type WhisperModel = z.infer<typeof ModelSchema>
 
+export const AuthUserSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  display_name: z.string(),
+})
+
+export type AuthUser = z.infer<typeof AuthUserSchema>
+
 const API_BASE = '/api'
 
 async function parseOrThrow<T>(schema: z.ZodType<T>, res: Response): Promise<T> {
@@ -138,4 +146,22 @@ export const api = {
     fetch(`${API_BASE}/models`).then((res) => parseOrThrow(z.array(ModelSchema), res)),
 
   uploadJob,
+
+  me: (): Promise<AuthUser | null> =>
+    fetch(`${API_BASE}/auth/me`).then((res) => {
+      if (res.status === 401) return null
+      return parseOrThrow(AuthUserSchema, res)
+    }),
+
+  login: (email: string, password: string) =>
+    fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }).then((res) => {
+      if (!res.ok) throw new Error('Credenciales inválidas')
+      return parseOrThrow(AuthUserSchema, res)
+    }),
+
+  logout: () => fetch(`${API_BASE}/auth/logout`, { method: 'POST' }).then(() => undefined),
 }

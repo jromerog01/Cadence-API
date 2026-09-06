@@ -5,8 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, ChevronDown, Clock, FileAudio, Loader2, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ExportMenu } from '@/components/export-menu'
-import { api } from '@/lib/api/client'
-import { toViewModel, type Transcription, type User } from '@/lib/api/view-models'
+import { api, type AuthUser } from '@/lib/api/client'
+import { toViewModel, type Transcription } from '@/lib/api/view-models'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es', {
@@ -105,7 +105,7 @@ function TranscriptionRow({ t }: { t: Transcription }) {
   )
 }
 
-export function LibrarySection({ user }: { user: User }) {
+export function LibrarySection({ user }: { user: AuthUser }) {
   const [query, setQuery] = useState('')
 
   const { data: jobs = [] } = useQuery({
@@ -136,7 +136,7 @@ export function LibrarySection({ user }: { user: User }) {
             Paso 02 · Biblioteca
           </p>
           <h1 className="text-pretty text-3xl font-semibold tracking-tight sm:text-4xl">
-            Transcripciones de {user.name.split(' ')[0]}
+            Transcripciones de {user.display_name.split(' ')[0]}
           </h1>
           <p className="mt-3 leading-relaxed text-muted-foreground">
             {ready} transcripciones listas · exporta cualquiera como TXT,

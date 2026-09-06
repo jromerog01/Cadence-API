@@ -13,7 +13,7 @@ from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.pdf_exporter import to_pdf
 from adapters.postgres_repo import PostgresJobRepository
-from api.deps import get_audio_probe, get_queue, get_repo
+from api.deps import get_audio_probe, get_current_user, get_queue, get_repo
 from api.job_creation import (
     ALLOWED_EXTENSIONS,
     MAX_UPLOAD_BYTES,
@@ -23,7 +23,7 @@ from api.job_creation import (
 )
 from api.schemas import JobOut
 from domain.exporters import TEXT_EXPORTERS
-from domain.models import DEFAULT_USER_ID
+from domain.models import User
 
 ExportFormat = Literal["txt", "md", "json", "srt", "vtt", "pdf"]
 
@@ -62,6 +62,7 @@ def create_job(
     file: UploadFile = File(...),
     model: str | None = Form(default=None),
     language: str | None = Form(default=None),
+    current_user: User = Depends(get_current_user),
     repo: PostgresJobRepository = Depends(get_repo),
     queue: Queue = Depends(get_queue),
     probe: FfmpegAudioProbe = Depends(get_audio_probe),
@@ -81,6 +82,7 @@ def create_job(
 
     return finalize_job(
         job_id=job_id,
+        owner_id=current_user.id,
         original_filename=file.filename,
         dest=dest,
         mime_type=file.content_type,
@@ -94,15 +96,22 @@ def create_job(
 
 
 @router.get("", response_model=list[JobOut])
-def list_jobs(repo: PostgresJobRepository = Depends(get_repo)):
-    jobs = repo.list_jobs(DEFAULT_USER_ID, limit=100, offset=0)
+def list_jobs(
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+):
+    jobs = repo.list_jobs(current_user.id, limit=100, offset=0)
     return [JobOut.from_domain(j) for j in jobs]
 
 
 @router.get("/{job_id}", response_model=JobOut)
-def get_job(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
+def get_job(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+):
     job = repo.get_job(job_id)
-    if job is None:
+    if job is None or job.owner_id != current_user.id:
         raise HTTPException(404, "Job not found")
     return JobOut.from_domain(job)
 
@@ -111,10 +120,11 @@ def get_job(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
 def export_job(
     job_id: UUID,
     format: ExportFormat,
+    current_user: User = Depends(get_current_user),
     repo: PostgresJobRepository = Depends(get_repo),
 ):
     job = repo.get_job(job_id)
-    if job is None:
+    if job is None or job.owner_id != current_user.id:
         raise HTTPException(404, "Job not found")
     if job.status != "done":
         raise HTTPException(409, "El trabajo todavía no tiene una transcripción lista")
@@ -188,8 +198,13 @@ def _stream_job_events(job_id: UUID) -> Iterator[str]:
 
 
 @router.get("/{job_id}/events")
-def job_events(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
-    if repo.get_job(job_id, include_segments=False) is None:
+def job_events(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+):
+    job = repo.get_job(job_id, include_segments=False)
+    if job is None or job.owner_id != current_user.id:
         raise HTTPException(404, "Job not found")
     return StreamingResponse(
         _stream_job_events(job_id),

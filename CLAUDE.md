@@ -60,6 +60,9 @@ docker compose exec api pytest
 # Logs de un servicio
 docker compose logs -f worker
 
+# Crear/actualizar un usuario (sin auto-registro, ver Fase 8)
+docker compose exec api python -m api.cli create-user correo@ejemplo.com "contraseña-larga" "Nombre Visible"
+
 # Retención: borra audio de trabajos terminados más viejos que
 # AUDIO_RETENTION_DAYS (0 = nunca). Programar como cron del host, p. ej.
 # diario a las 3am: 0 3 * * * cd <repo> && docker compose exec -T worker \

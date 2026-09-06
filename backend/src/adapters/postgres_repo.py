@@ -1,11 +1,51 @@
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
-from adapters.orm_models import JobRow, SegmentRow
-from domain.models import Job, Segment
+from adapters.orm_models import JobRow, SegmentRow, UserRow
+from domain.models import Job, Segment, User
+
+
+def _user_from_row(row: UserRow) -> User:
+    return User(
+        id=row.id,
+        email=row.email,
+        password_hash=row.password_hash,
+        display_name=row.display_name,
+        is_active=row.is_active,
+    )
+
+
+class PostgresUserRepository:
+    def __init__(self, session: Session):
+        self._session = session
+
+    def get_by_email(self, email: str) -> User | None:
+        stmt = select(UserRow).where(UserRow.email == email)
+        row = self._session.execute(stmt).scalar_one_or_none()
+        return _user_from_row(row) if row else None
+
+    def get_by_id(self, user_id: UUID) -> User | None:
+        row = self._session.get(UserRow, user_id)
+        return _user_from_row(row) if row else None
+
+    def upsert_user(self, *, email: str, password_hash: str, display_name: str) -> User:
+        stmt = select(UserRow).where(UserRow.email == email)
+        row = self._session.execute(stmt).scalar_one_or_none()
+        if row is None:
+            row = UserRow(
+                id=uuid4(), email=email, password_hash=password_hash,
+                display_name=display_name, is_active=True,
+            )
+            self._session.add(row)
+        else:
+            row.password_hash = password_hash
+            row.display_name = display_name
+        self._session.commit()
+        self._session.refresh(row)
+        return _user_from_row(row)
 
 
 def _job_from_row(row: JobRow, segments: list[Segment] | None = None) -> Job:

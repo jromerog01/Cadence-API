@@ -9,7 +9,6 @@ from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.model_catalog import get_enabled_models
 from adapters.postgres_repo import PostgresJobRepository
 from api.schemas import JobOut
-from domain.models import DEFAULT_USER_ID
 from worker.tasks import transcribe_job
 
 ALLOWED_EXTENSIONS = {".mp3", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".webm", ".mp4"}
@@ -34,6 +33,7 @@ def check_concurrency_limit(repo: PostgresJobRepository) -> None:
 def finalize_job(
     *,
     job_id: UUID,
+    owner_id: UUID,
     original_filename: str,
     dest: Path,
     mime_type: str | None,
@@ -62,7 +62,7 @@ def finalize_job(
 
     job = repo.create_job(
         id=job_id,
-        owner_id=DEFAULT_USER_ID,
+        owner_id=owner_id,
         original_filename=original_filename,
         stored_path=str(dest),
         mime_type=mime_type,

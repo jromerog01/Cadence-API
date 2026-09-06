@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterator, Protocol
 from uuid import UUID
 
-from domain.models import Job, Segment, TranscriptionInfo
+from domain.models import Job, Segment, TranscriptionInfo, User
 
 
 class TranscriptionEngine(Protocol):
@@ -22,6 +22,12 @@ class JobRepository(Protocol):
     def list_segments(self, job_id: UUID) -> list[Segment]: ...
     def count_active_jobs(self) -> int: ...
     def list_finished_jobs_before(self, cutoff: datetime) -> list[Job]: ...
+
+
+class UserRepository(Protocol):
+    def get_by_email(self, email: str) -> User | None: ...
+    def get_by_id(self, user_id: UUID) -> User | None: ...
+    def upsert_user(self, *, email: str, password_hash: str, display_name: str) -> User: ...
 
 
 @dataclass

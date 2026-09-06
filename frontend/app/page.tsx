@@ -1,39 +1,48 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { TopNav } from '@/components/top-nav'
 import { UploadSection } from '@/components/upload-section'
 import { LibrarySection } from '@/components/library-section'
-import type { User } from '@/lib/api/view-models'
+import { LoginScreen } from '@/components/login-screen'
+import { api, type AuthUser } from '@/lib/api/client'
 
 type View = 'upload' | 'library'
 
-// Fase 8 reemplaza esto por la sesión real; hasta entonces todos los
-// trabajos pertenecen al usuario `default` sembrado en la migración inicial.
-const DEFAULT_USER: User = {
-  id: 'default',
-  name: 'Default',
-  email: 'default@cadence.local',
-  initials: 'DF',
-}
-
 export default function Page() {
   const [view, setView] = useState<View>('upload')
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined)
+
+  useEffect(() => {
+    api.me().then(setUser)
+  }, [])
+
+  if (user === undefined) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </main>
+    )
+  }
+
+  if (user === null) {
+    return <LoginScreen onLogin={setUser} />
+  }
 
   return (
     <main className="min-h-dvh">
       <TopNav
         view={view}
         onViewChange={setView}
-        users={[DEFAULT_USER]}
-        activeUser={DEFAULT_USER}
-        onUserChange={() => {}}
+        user={user}
+        onLogout={() => api.logout().then(() => setUser(null))}
       />
 
       {view === 'upload' ? (
         <UploadSection onViewLibrary={() => setView('library')} />
       ) : (
-        <LibrarySection user={DEFAULT_USER} />
+        <LibrarySection user={user} />
       )}
     </main>
   )

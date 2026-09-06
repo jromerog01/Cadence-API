@@ -2,14 +2,16 @@ import os
 from typing import Iterator
 
 import redis
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request
 from redis import Redis
 from rq import Queue
 from sqlalchemy.orm import Session
 
 from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
-from adapters.postgres_repo import PostgresJobRepository
+from adapters.postgres_repo import PostgresJobRepository, PostgresUserRepository
+from api.security import COOKIE_NAME, decode_session_token
+from domain.models import User
 
 _redis_conn: Redis | None = None
 
@@ -39,3 +41,19 @@ def get_queue() -> Queue:
 
 def get_audio_probe() -> FfmpegAudioProbe:
     return FfmpegAudioProbe()
+
+
+def get_user_repo(session: Session = Depends(get_db_session)) -> PostgresUserRepository:
+    return PostgresUserRepository(session)
+
+
+def get_current_user(
+    request: Request,
+    user_repo: PostgresUserRepository = Depends(get_user_repo),
+) -> User:
+    token = request.cookies.get(COOKIE_NAME)
+    user_id = decode_session_token(token) if token else None
+    user = user_repo.get_by_id(user_id) if user_id else None
+    if user is None or not user.is_active:
+        raise HTTPException(401, "No autenticado")
+    return user

@@ -10,7 +10,7 @@ from rq import Queue
 
 from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.postgres_repo import PostgresJobRepository
-from api.deps import get_audio_probe, get_queue, get_repo
+from api.deps import get_audio_probe, get_current_user, get_queue, get_repo
 from api.job_creation import (
     ALLOWED_EXTENSIONS,
     MAX_UPLOAD_BYTES,
@@ -19,6 +19,7 @@ from api.job_creation import (
     storage_dir,
 )
 from api.schemas import JobOut
+from domain.models import User
 
 router = APIRouter()
 
@@ -56,7 +57,11 @@ class InitUploadOut(BaseModel):
 
 
 @router.post("", response_model=InitUploadOut)
-def init_upload(payload: InitUploadIn, repo: PostgresJobRepository = Depends(get_repo)):
+def init_upload(
+    payload: InitUploadIn,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+):
     ext = Path(payload.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Formato no soportado: {ext or 'desconocido'}")
@@ -73,6 +78,7 @@ def init_upload(payload: InitUploadIn, repo: PostgresJobRepository = Depends(get
     total_parts = math.ceil(payload.size_bytes / CHUNK_SIZE_BYTES)
 
     meta = {
+        "owner_id": str(current_user.id),
         "filename": payload.filename,
         "ext": ext,
         "size_bytes": payload.size_bytes,
@@ -85,10 +91,21 @@ def init_upload(payload: InitUploadIn, repo: PostgresJobRepository = Depends(get
     return InitUploadOut(upload_id=upload_id, chunk_size=CHUNK_SIZE_BYTES, total_parts=total_parts)
 
 
+def _check_owner(meta: dict, current_user: User) -> None:
+    if meta.get("owner_id") != str(current_user.id):
+        raise HTTPException(404, "Sesión de subida no encontrada")
+
+
 @router.put("/{upload_id}/parts/{part_number}")
-async def upload_part(upload_id: str, part_number: int, request: Request):
+async def upload_part(
+    upload_id: str,
+    part_number: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
     session_dir = _session_dir(upload_id)
     meta = _read_meta(session_dir)
+    _check_owner(meta, current_user)
 
     if not (0 <= part_number < meta["total_parts"]):
         raise HTTPException(400, "Número de parte fuera de rango")
@@ -101,12 +118,14 @@ async def upload_part(upload_id: str, part_number: int, request: Request):
 @router.post("/{upload_id}/complete", response_model=JobOut)
 def complete_upload(
     upload_id: str,
+    current_user: User = Depends(get_current_user),
     repo: PostgresJobRepository = Depends(get_repo),
     queue: Queue = Depends(get_queue),
     probe: FfmpegAudioProbe = Depends(get_audio_probe),
 ):
     session_dir = _session_dir(upload_id)
     meta = _read_meta(session_dir)
+    _check_owner(meta, current_user)
 
     missing = [
         n for n in range(meta["total_parts"]) if not (session_dir / f"part-{n:05d}").exists()
@@ -131,6 +150,7 @@ def complete_upload(
 
     return finalize_job(
         job_id=job_id,
+        owner_id=current_user.id,
         original_filename=meta["filename"],
         dest=dest,
         mime_type=None,
