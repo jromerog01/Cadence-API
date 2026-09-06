@@ -26,6 +26,15 @@ export const JobSchema = z.object({
 export type Job = z.infer<typeof JobSchema>
 export type JobSegment = z.infer<typeof SegmentSchema>
 
+export const ModelSchema = z.object({
+  name: z.string(),
+  ram_gb: z.number(),
+  speed_factor: z.number(),
+  role: z.string(),
+})
+
+export type WhisperModel = z.infer<typeof ModelSchema>
+
 const API_BASE = '/api'
 
 async function parseOrThrow<T>(schema: z.ZodType<T>, res: Response): Promise<T> {
@@ -35,6 +44,11 @@ async function parseOrThrow<T>(schema: z.ZodType<T>, res: Response): Promise<T> 
   return schema.parse(await res.json())
 }
 
+export type UploadOptions = {
+  model?: string
+  language?: string | null
+}
+
 export const api = {
   listJobs: () =>
     fetch(`${API_BASE}/jobs`).then((res) => parseOrThrow(z.array(JobSchema), res)),
@@ -42,7 +56,10 @@ export const api = {
   getJob: (id: string) =>
     fetch(`${API_BASE}/jobs/${id}`).then((res) => parseOrThrow(JobSchema, res)),
 
-  uploadJob: (file: File, onProgress: (pct: number) => void) =>
+  listModels: () =>
+    fetch(`${API_BASE}/models`).then((res) => parseOrThrow(z.array(ModelSchema), res)),
+
+  uploadJob: (file: File, options: UploadOptions, onProgress: (pct: number) => void) =>
     new Promise<Job>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${API_BASE}/jobs`)
@@ -63,6 +80,8 @@ export const api = {
       xhr.onerror = () => reject(new Error('network error'))
       const form = new FormData()
       form.append('file', file)
+      if (options.model) form.append('model', options.model)
+      if (options.language) form.append('language', options.language)
       xhr.send(form)
     }),
 }

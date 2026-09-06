@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   AudioLines,
@@ -13,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api/client'
 import { useJobProgress } from '@/lib/hooks/useJobProgress'
+import { probeAudioDuration } from '@/lib/audio'
 
 type Stage = 'uploading' | 'transcribing' | 'done' | 'error'
 
@@ -23,6 +25,26 @@ type UploadItem = {
   progress: number
   stage: Stage
   jobId?: string
+  estimatedSeconds?: number | null
+}
+
+const MODEL_STORAGE_KEY = 'cadence:preferred-model'
+const LANGUAGE_STORAGE_KEY = 'cadence:preferred-language'
+const DEFAULT_MODEL = 'small'
+
+const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Detectar automáticamente' },
+  { value: 'es', label: 'Español' },
+  { value: 'en', label: 'Inglés' },
+  { value: 'pt', label: 'Portugués' },
+  { value: 'fr', label: 'Francés' },
+  { value: 'de', label: 'Alemán' },
+  { value: 'it', label: 'Italiano' },
+]
+
+function formatEstimate(seconds: number): string {
+  if (seconds < 60) return `~${Math.max(1, Math.round(seconds))} s`
+  return `~${Math.round(seconds / 60)} min`
 }
 
 const stageLabel: Record<Stage, string> = {
@@ -111,6 +133,11 @@ function UploadRow({
               {item.stage !== 'done' && item.stage !== 'error' && ` ${Math.round(item.progress)}%`}
             </span>
           </div>
+          {item.stage === 'transcribing' && item.estimatedSeconds != null && (
+            <p className="mt-1 text-right font-mono text-[11px] text-muted-foreground">
+              estimado {formatEstimate(item.estimatedSeconds)}
+            </p>
+          )}
         </div>
 
         <button
@@ -128,7 +155,40 @@ function UploadRow({
 export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) {
   const [items, setItems] = useState<UploadItem[]>([])
   const [dragging, setDragging] = useState(false)
+  const [model, setModel] = useState(DEFAULT_MODEL)
+  const [language, setLanguage] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const { data: models = [] } = useQuery({
+    queryKey: ['models'],
+    queryFn: api.listModels,
+    staleTime: Infinity,
+  })
+
+  // Preferences persist in localStorage; read once on mount (window isn't
+  // available during the static export's build-time prerender).
+  useEffect(() => {
+    const storedModel = window.localStorage.getItem(MODEL_STORAGE_KEY)
+    if (storedModel) setModel(storedModel)
+    const storedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY)
+    if (storedLanguage) setLanguage(storedLanguage)
+  }, [])
+
+  useEffect(() => {
+    if (models.length > 0 && !models.some((m) => m.name === model)) {
+      setModel(models[0].name)
+    }
+  }, [models, model])
+
+  const handleModelChange = (value: string) => {
+    setModel(value)
+    window.localStorage.setItem(MODEL_STORAGE_KEY, value)
+  }
+
+  const handleLanguageChange = (value: string) => {
+    setLanguage(value)
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, value)
+  }
 
   const updateItem = useCallback((id: string, patch: Partial<UploadItem>) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
@@ -141,7 +201,9 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
   const startUpload = useCallback(
     (item: UploadItem, file: File) => {
       api
-        .uploadJob(file, (pct) => updateItem(item.id, { progress: pct }))
+        .uploadJob(file, { model, language: language || null }, (pct) =>
+          updateItem(item.id, { progress: pct }),
+        )
         .then((job) => {
           updateItem(item.id, {
             jobId: job.id,
@@ -153,7 +215,7 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
           updateItem(item.id, { stage: 'error' })
         })
     },
-    [updateItem],
+    [updateItem, model, language],
   )
 
   const addFiles = useCallback(
@@ -161,6 +223,7 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
       const audio = Array.from(files).filter((f) =>
         /\.(mp3|wav|m4a|ogg|opus|flac|webm|mp4)$/i.test(f.name),
       )
+      const speedFactor = models.find((m) => m.name === model)?.speed_factor
       const next = audio.map((f) => ({
         item: {
           id: crypto.randomUUID(),
@@ -172,9 +235,16 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
         file: f,
       }))
       setItems((prev) => [...next.map((n) => n.item), ...prev])
-      next.forEach(({ item, file }) => startUpload(item, file))
+      next.forEach(({ item, file }) => {
+        startUpload(item, file)
+        if (speedFactor) {
+          probeAudioDuration(file).then((duration) => {
+            if (duration) updateItem(item.id, { estimatedSeconds: duration * speedFactor })
+          })
+        }
+      })
     },
-    [startUpload],
+    [startUpload, updateItem, models, model],
   )
 
   const activeCount = items.filter((it) => it.stage !== 'done' && it.stage !== 'error').length
@@ -192,6 +262,38 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
           Arrastra tus archivos o selecciónalos manualmente. Verás el avance en
           tiempo real, desde la subida hasta la transcripción final.
         </p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-3">
+        <label className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm">
+          <span className="text-muted-foreground">Modelo</span>
+          <select
+            value={model}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="cursor-pointer bg-transparent font-medium outline-none"
+          >
+            {models.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.name} — {m.role}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-sm">
+          <span className="text-muted-foreground">Idioma</span>
+          <select
+            value={language}
+            onChange={(e) => handleLanguageChange(e.target.value)}
+            className="cursor-pointer bg-transparent font-medium outline-none"
+          >
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div

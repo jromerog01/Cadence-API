@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Iterator
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from rq import Queue
 
 from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
+from adapters.model_catalog import get_enabled_models
 from adapters.postgres_repo import PostgresJobRepository
 from api.deps import get_audio_probe, get_queue, get_repo
 from api.schemas import JobOut
@@ -51,6 +52,8 @@ def _save_upload(file: UploadFile, dest: Path) -> int:
 @router.post("", status_code=201, response_model=JobOut)
 def create_job(
     file: UploadFile = File(...),
+    model: str | None = Form(default=None),
+    language: str | None = Form(default=None),
     repo: PostgresJobRepository = Depends(get_repo),
     queue: Queue = Depends(get_queue),
     probe: FfmpegAudioProbe = Depends(get_audio_probe),
@@ -61,6 +64,11 @@ def create_job(
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Formato no soportado: {ext or 'desconocido'}")
+
+    enabled_models = {m.name for m in get_enabled_models()}
+    chosen_model = model or os.environ.get("WHISPER_MODEL", "tiny")
+    if chosen_model not in enabled_models:
+        raise HTTPException(400, f"Modelo no disponible: {chosen_model}")
 
     job_id = uuid4()
     dest = _storage_dir() / f"{job_id}{ext}"
@@ -84,7 +92,8 @@ def create_job(
         mime_type=file.content_type,
         size_bytes=size_bytes,
         duration_seconds=audio_info.duration_seconds,
-        model=os.environ.get("WHISPER_MODEL", "tiny"),
+        model=chosen_model,
+        language=language or None,
     )
     queue.enqueue(transcribe_job, str(job.id), job_timeout=3600)
     return JobOut.from_domain(job)
