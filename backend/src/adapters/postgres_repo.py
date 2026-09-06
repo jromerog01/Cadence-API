@@ -42,11 +42,12 @@ class PostgresJobRepository:
         self._session.refresh(row)
         return _job_from_row(row)
 
-    def get_job(self, job_id: UUID) -> Job | None:
+    def get_job(self, job_id: UUID, *, include_segments: bool = True) -> Job | None:
         row = self._session.get(JobRow, job_id)
         if row is None:
             return None
-        return _job_from_row(row, self.list_segments(job_id))
+        segments = self.list_segments(job_id) if include_segments else []
+        return _job_from_row(row, segments)
 
     def list_jobs(self, owner_id: UUID, *, limit: int, offset: int) -> list[Job]:
         stmt = (

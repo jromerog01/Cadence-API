@@ -3,6 +3,11 @@
 	file_server
 
 	handle /api/* {
-		reverse_proxy api:8000
+		# flush_interval -1: forward bytes immediately instead of Caddy's
+		# default batched flush, which otherwise buffers SSE responses
+		# (GET /api/jobs/{id}/events) and breaks streaming silently.
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
 	}
 }

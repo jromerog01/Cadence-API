@@ -1,10 +1,16 @@
+import json
 import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from rq import Queue
 
+from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.postgres_repo import PostgresJobRepository
 from api.deps import get_audio_probe, get_queue, get_repo
@@ -13,6 +19,8 @@ from domain.models import DEFAULT_USER_ID
 from worker.tasks import transcribe_job
 
 router = APIRouter()
+
+SSE_POLL_INTERVAL_SECONDS = 1.0
 
 ALLOWED_EXTENSIONS = {".mp3", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".webm", ".mp4"}
 MAX_UPLOAD_BYTES = int(os.environ.get("AUDIO_MAX_SIZE_BYTES", str(500 * 1024 * 1024)))
@@ -94,3 +102,68 @@ def get_job(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
     if job is None:
         raise HTTPException(404, "Job not found")
     return JobOut.from_domain(job)
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _stream_job_events(job_id: UUID) -> Iterator[str]:
+    while True:
+        session = new_session()
+        try:
+            repo = PostgresJobRepository(session)
+            job = repo.get_job(job_id, include_segments=False)
+        finally:
+            session.close()
+
+        if job is None:
+            yield _sse("error", {"status": "error", "message": "Job not found"})
+            return
+
+        if job.status == "error":
+            yield _sse("error", {"status": "error", "message": job.error_message or ""})
+            return
+
+        if job.status == "done":
+            session = new_session()
+            try:
+                full_job = PostgresJobRepository(session).get_job(job_id, include_segments=True)
+            finally:
+                session.close()
+            segment_count = len(full_job.segments) if full_job else 0
+            yield _sse(
+                "done",
+                {
+                    "status": "done",
+                    "segment_count": segment_count,
+                    "detected_language": job.detected_language,
+                },
+            )
+            return
+
+        elapsed_seconds = 0.0
+        if job.started_at is not None:
+            elapsed_seconds = (datetime.now(timezone.utc) - job.started_at).total_seconds()
+
+        yield _sse(
+            "progress",
+            {
+                "progress": job.progress,
+                "status": job.status,
+                "stage": job.stage,
+                "elapsed_seconds": elapsed_seconds,
+            },
+        )
+        time.sleep(SSE_POLL_INTERVAL_SECONDS)
+
+
+@router.get("/{job_id}/events")
+def job_events(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
+    if repo.get_job(job_id, include_segments=False) is None:
+        raise HTTPException(404, "Job not found")
+    return StreamingResponse(
+        _stream_job_events(job_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

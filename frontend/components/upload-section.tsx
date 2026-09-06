@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   AlertTriangle,
   AudioLines,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api/client'
+import { useJobProgress } from '@/lib/hooks/useJobProgress'
 
 type Stage = 'uploading' | 'transcribing' | 'done' | 'error'
 
@@ -36,7 +37,93 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const POLL_INTERVAL_MS = 2000
+function UploadRow({
+  item,
+  onUpdate,
+  onRemove,
+}: {
+  item: UploadItem
+  onUpdate: (id: string, patch: Partial<UploadItem>) => void
+  onRemove: (id: string) => void
+}) {
+  useJobProgress(
+    item.stage === 'transcribing' ? item.jobId : undefined,
+    (update) => {
+      if (update.status === 'done') {
+        onUpdate(item.id, { stage: 'done', progress: 100 })
+      } else if (update.status === 'error') {
+        onUpdate(item.id, { stage: 'error' })
+      } else {
+        onUpdate(item.id, { progress: Math.round(update.progress * 100) })
+      }
+    },
+  )
+
+  return (
+    <li className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+            item.stage === 'done'
+              ? 'bg-accent text-accent-foreground'
+              : item.stage === 'error'
+                ? 'bg-destructive/10 text-destructive'
+                : 'bg-muted text-muted-foreground',
+          )}
+        >
+          {item.stage === 'done' ? (
+            <Check className="size-4" />
+          ) : item.stage === 'error' ? (
+            <AlertTriangle className="size-4" />
+          ) : (
+            <AudioLines className="size-4" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-sm font-medium">{item.name}</p>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {item.size}
+            </span>
+          </div>
+
+          <div className="mt-2 flex items-center gap-3">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all duration-300',
+                  item.stage === 'done'
+                    ? 'bg-accent'
+                    : item.stage === 'error'
+                      ? 'bg-destructive'
+                      : 'bg-primary',
+                )}
+                style={{ width: `${item.progress}%` }}
+              />
+            </div>
+            <span className="flex w-28 shrink-0 items-center justify-end gap-1.5 font-mono text-xs text-muted-foreground">
+              {item.stage !== 'done' && item.stage !== 'error' && (
+                <Loader2 className="size-3 animate-spin" />
+              )}
+              {stageLabel[item.stage]}
+              {item.stage !== 'done' && item.stage !== 'error' && ` ${Math.round(item.progress)}%`}
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => onRemove(item.id)}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={`Quitar ${item.name}`}
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+    </li>
+  )
+}
 
 export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) {
   const [items, setItems] = useState<UploadItem[]>([])
@@ -47,12 +134,20 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
   }, [])
 
+  const removeItem = useCallback((id: string) => {
+    setItems((prev) => prev.filter((it) => it.id !== id))
+  }, [])
+
   const startUpload = useCallback(
     (item: UploadItem, file: File) => {
       api
         .uploadJob(file, (pct) => updateItem(item.id, { progress: pct }))
         .then((job) => {
-          updateItem(item.id, { jobId: job.id, stage: 'transcribing', progress: job.progress * 100 })
+          updateItem(item.id, {
+            jobId: job.id,
+            stage: 'transcribing',
+            progress: Math.round(job.progress * 100),
+          })
         })
         .catch(() => {
           updateItem(item.id, { stage: 'error' })
@@ -60,32 +155,6 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
     },
     [updateItem],
   )
-
-  // Poll every in-flight job's status until it reaches a terminal state.
-  // SSE replaces this polling in Fase 4.
-  useEffect(() => {
-    const inFlight = items.filter((it) => it.stage === 'transcribing' && it.jobId)
-    if (inFlight.length === 0) return
-
-    const interval = setInterval(() => {
-      inFlight.forEach((it) => {
-        api
-          .getJob(it.jobId!)
-          .then((job) => {
-            if (job.status === 'done') {
-              updateItem(it.id, { stage: 'done', progress: 100 })
-            } else if (job.status === 'error') {
-              updateItem(it.id, { stage: 'error' })
-            } else {
-              updateItem(it.id, { progress: Math.round(job.progress * 100) })
-            }
-          })
-          .catch(() => updateItem(it.id, { stage: 'error' }))
-      })
-    }, POLL_INTERVAL_MS)
-
-    return () => clearInterval(interval)
-  }, [items, updateItem])
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
@@ -188,73 +257,7 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
 
           <ul className="flex flex-col gap-3">
             {items.map((it) => (
-              <li
-                key={it.id}
-                className="rounded-xl border border-border bg-card p-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                      it.stage === 'done'
-                        ? 'bg-accent text-accent-foreground'
-                        : it.stage === 'error'
-                          ? 'bg-destructive/10 text-destructive'
-                          : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {it.stage === 'done' ? (
-                      <Check className="size-4" />
-                    ) : it.stage === 'error' ? (
-                      <AlertTriangle className="size-4" />
-                    ) : (
-                      <AudioLines className="size-4" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium">{it.name}</p>
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                        {it.size}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-3">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn(
-                            'h-full rounded-full transition-all duration-300',
-                            it.stage === 'done'
-                              ? 'bg-accent'
-                              : it.stage === 'error'
-                                ? 'bg-destructive'
-                                : 'bg-primary',
-                          )}
-                          style={{ width: `${it.progress}%` }}
-                        />
-                      </div>
-                      <span className="flex w-28 shrink-0 items-center justify-end gap-1.5 font-mono text-xs text-muted-foreground">
-                        {it.stage !== 'done' && it.stage !== 'error' && (
-                          <Loader2 className="size-3 animate-spin" />
-                        )}
-                        {stageLabel[it.stage]}
-                        {it.stage !== 'done' && it.stage !== 'error' && ` ${Math.round(it.progress)}%`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      setItems((prev) => prev.filter((x) => x.id !== it.id))
-                    }
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    aria-label={`Quitar ${it.name}`}
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-              </li>
+              <UploadRow key={it.id} item={it} onUpdate={updateItem} onRemove={removeItem} />
             ))}
           </ul>
         </div>
