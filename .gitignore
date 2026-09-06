@@ -1,0 +1,31 @@
+# env
+.env
+.env.local
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+backend/.pytest_cache/
+
+# node / next
+node_modules/
+.next/
+out/
+frontend/.env.local
+
+# docker volumes bind-mounted locally (if any)
+pgdata/
+audio_storage/
+model_weights/
+
+# design source archives (kept in docs/ via git add -f)
+*.zip
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
