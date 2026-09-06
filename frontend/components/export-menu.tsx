@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, FileCode, FileText, FileType } from 'lucide-react'
+import { ChevronDown, Download, FileCode, FileJson, FileText, FileType, Subtitles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   exportTranscription,
@@ -12,11 +12,15 @@ import type { Transcription } from '@/lib/api/view-models'
 const options: { format: ExportFormat; label: string; hint: string; icon: typeof FileText }[] = [
   { format: 'txt', label: 'Texto plano', hint: '.txt', icon: FileText },
   { format: 'md', label: 'Markdown', hint: '.md', icon: FileCode },
+  { format: 'json', label: 'JSON', hint: '.json', icon: FileJson },
+  { format: 'srt', label: 'Subtítulos SRT', hint: '.srt', icon: Subtitles },
+  { format: 'vtt', label: 'Subtítulos VTT', hint: '.vtt', icon: Subtitles },
   { format: 'pdf', label: 'Documento', hint: '.pdf', icon: FileType },
 ]
 
 export function ExportMenu({ transcription }: { transcription: Transcription }) {
   const [open, setOpen] = useState(false)
+  const [error, setError] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -50,8 +54,9 @@ export function ExportMenu({ transcription }: { transcription: Transcription }) 
               <button
                 key={opt.format}
                 onClick={() => {
-                  exportTranscription(transcription, opt.format)
                   setOpen(false)
+                  setError(false)
+                  exportTranscription(transcription, opt.format).catch(() => setError(true))
                 }}
                 className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted"
               >
@@ -64,6 +69,11 @@ export function ExportMenu({ transcription }: { transcription: Transcription }) 
             )
           })}
         </div>
+      )}
+      {error && (
+        <p className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-destructive">
+          No se pudo exportar. Intenta de nuevo.
+        </p>
       )}
     </div>
   )

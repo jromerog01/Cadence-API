@@ -3,21 +3,34 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from rq import Queue
 
 from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.model_catalog import get_enabled_models
+from adapters.pdf_exporter import to_pdf
 from adapters.postgres_repo import PostgresJobRepository
 from api.deps import get_audio_probe, get_queue, get_repo
 from api.schemas import JobOut
+from domain.exporters import TEXT_EXPORTERS
 from domain.models import DEFAULT_USER_ID
 from worker.tasks import transcribe_job
+
+ExportFormat = Literal["txt", "md", "json", "srt", "vtt", "pdf"]
+
+EXPORT_MIME_TYPES: dict[str, str] = {
+    "txt": "text/plain; charset=utf-8",
+    "md": "text/markdown; charset=utf-8",
+    "json": "application/json",
+    "srt": "application/x-subrip",
+    "vtt": "text/vtt",
+    "pdf": "application/pdf",
+}
 
 router = APIRouter()
 
@@ -111,6 +124,32 @@ def get_job(job_id: UUID, repo: PostgresJobRepository = Depends(get_repo)):
     if job is None:
         raise HTTPException(404, "Job not found")
     return JobOut.from_domain(job)
+
+
+@router.get("/{job_id}/export")
+def export_job(
+    job_id: UUID,
+    format: ExportFormat,
+    repo: PostgresJobRepository = Depends(get_repo),
+):
+    job = repo.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    if job.status != "done":
+        raise HTTPException(409, "El trabajo todavía no tiene una transcripción lista")
+
+    content: bytes
+    if format == "pdf":
+        content = to_pdf(job)
+    else:
+        content = TEXT_EXPORTERS[format](job).encode("utf-8")
+
+    base_name = Path(job.original_filename).stem
+    return Response(
+        content=content,
+        media_type=EXPORT_MIME_TYPES[format],
+        headers={"Content-Disposition": f'attachment; filename="{base_name}.{format}"'},
+    )
 
 
 def _sse(event: str, data: dict) -> str:
