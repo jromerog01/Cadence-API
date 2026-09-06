@@ -89,8 +89,8 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
-      const audio = Array.from(files).filter(
-        (f) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|flac|aac)$/i.test(f.name),
+      const audio = Array.from(files).filter((f) =>
+        /\.(mp3|wav|m4a|ogg|opus|flac|webm|mp4)$/i.test(f.name),
       )
       const next = audio.map((f) => ({
         item: {
@@ -150,7 +150,7 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
           Arrastra tus audios aquí
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          MP3, WAV, M4A, OGG, FLAC · hasta 500 MB por archivo
+          MP3, WAV, M4A, OGG, OPUS, FLAC, WEBM, MP4 · hasta 500 MB por archivo
         </p>
         <button
           onClick={() => inputRef.current?.click()}
@@ -162,7 +162,7 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
         <input
           ref={inputRef}
           type="file"
-          accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac"
+          accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.webm,.mp4"
           multiple
           className="hidden"
           onChange={(e) => e.target.files && addFiles(e.target.files)}

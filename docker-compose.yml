@@ -33,6 +33,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
       REDIS_URL: redis://redis:6379/0
       AUDIO_STORAGE_DIR: /data/audio
+      AUDIO_MAX_SIZE_BYTES: ${AUDIO_MAX_SIZE_BYTES:-524288000}
       WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
     volumes:
       - audio_storage:/data/audio

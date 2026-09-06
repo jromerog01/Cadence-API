@@ -8,6 +8,7 @@ from rq import Queue
 from sqlalchemy.orm import Session
 
 from adapters.db import new_session
+from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.postgres_repo import PostgresJobRepository
 
 _redis_conn: Redis | None = None
@@ -34,3 +35,7 @@ def get_repo(session: Session = Depends(get_db_session)) -> PostgresJobRepositor
 
 def get_queue() -> Queue:
     return Queue("transcriptions", connection=get_redis())
+
+
+def get_audio_probe() -> FfmpegAudioProbe:
+    return FfmpegAudioProbe()

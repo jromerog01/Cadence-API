@@ -1,9 +1,12 @@
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 from uuid import UUID
 
 from adapters.db import new_session
+from adapters.ffmpeg_probe import normalize_to_wav
 from adapters.postgres_repo import PostgresJobRepository
 from adapters.whisper_engine import WhisperEngine
 from domain.models import Segment
@@ -28,6 +31,28 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _consume_segments(
+    repo: PostgresJobRepository,
+    job_id: UUID,
+    segments: Iterator[Segment],
+    duration_seconds: float,
+) -> None:
+    # segments is faster-whisper's lazy generator: the actual transcription
+    # work happens as this loop advances, which is why it must run while the
+    # normalized audio file (and its temp directory) still exists.
+    batch: list[Segment] = []
+    for seg in segments:
+        batch.append(seg)
+        if len(batch) >= BATCH_SIZE:
+            repo.insert_segments(job_id, batch)
+            if duration_seconds:
+                progress = min(batch[-1].end_seconds / duration_seconds, 1.0)
+                repo.update_job(job_id, progress=progress)
+            batch = []
+    if batch:
+        repo.insert_segments(job_id, batch)
+
+
 def transcribe_job(job_id: str) -> None:
     session = new_session()
     repo = PostgresJobRepository(session)
@@ -36,32 +61,26 @@ def transcribe_job(job_id: str) -> None:
         session.close()
         return
 
-    repo.update_job(job.id, status="processing", stage="transcribing", started_at=_utcnow())
+    repo.update_job(job.id, status="processing", stage="normalizing", started_at=_utcnow())
     try:
-        engine = _get_engine(job.model)
-        info, segments = engine.transcribe(Path(job.stored_path), language=job.language)
-        repo.update_job(job.id, duration_seconds=info.duration_seconds)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized_path = Path(tmp_dir) / "normalized.wav"
+            normalize_to_wav(Path(job.stored_path), normalized_path)
 
-        batch: list[Segment] = []
-        for seg in segments:
-            batch.append(seg)
-            if len(batch) >= BATCH_SIZE:
-                repo.insert_segments(job.id, batch)
-                if info.duration_seconds:
-                    progress = min(batch[-1].end_seconds / info.duration_seconds, 1.0)
-                    repo.update_job(job.id, progress=progress)
-                batch = []
-        if batch:
-            repo.insert_segments(job.id, batch)
+            repo.update_job(job.id, stage="transcribing")
+            engine = _get_engine(job.model)
+            info, segments = engine.transcribe(normalized_path, language=job.language)
+            repo.update_job(job.id, duration_seconds=info.duration_seconds)
+            _consume_segments(repo, job.id, segments, info.duration_seconds)
 
-        repo.update_job(
-            job.id,
-            status="done",
-            stage=None,
-            progress=1.0,
-            detected_language=info.detected_language,
-            finished_at=_utcnow(),
-        )
+            repo.update_job(
+                job.id,
+                status="done",
+                stage=None,
+                progress=1.0,
+                detected_language=info.detected_language,
+                finished_at=_utcnow(),
+            )
     except Exception as exc:
         repo.update_job(job.id, status="error", error_message=str(exc), finished_at=_utcnow())
         raise
