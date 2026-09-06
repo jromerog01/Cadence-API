@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cadence}
+      POSTGRES_USER: ${POSTGRES_USER:-cadence}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cadence}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: ${POSTGRES_MEM_LIMIT:-512m}
+    networks: [cadence]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: ${REDIS_MEM_LIMIT:-128m}
+    networks: [cadence]
+
+  api:
+    build:
+      context: ./backend
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
+      REDIS_URL: redis://redis:6379/0
+      AUDIO_STORAGE_DIR: /data/audio
+      WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
+    volumes:
+      - audio_storage:/data/audio
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    networks: [cadence]
+
+  worker:
+    build:
+      context: ./backend
+    command: ["rq", "worker", "-u", "redis://redis:6379/0", "transcriptions"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
+      REDIS_URL: redis://redis:6379/0
+      AUDIO_STORAGE_DIR: /data/audio
+      WHISPER_MODEL_CACHE_DIR: /models
+      WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
+    volumes:
+      - audio_storage:/data/audio
+      - model_weights:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: ${WORKER_MEM_LIMIT:-1g}
+    networks: [cadence]
+
+volumes:
+  pgdata:
+  audio_storage:
+  model_weights:
+
+networks:
+  cadence:
