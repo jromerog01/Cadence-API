@@ -34,6 +34,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       AUDIO_STORAGE_DIR: /data/audio
       AUDIO_MAX_SIZE_BYTES: ${AUDIO_MAX_SIZE_BYTES:-524288000}
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
       WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
     volumes:
       - audio_storage:/data/audio
@@ -62,6 +63,7 @@ services:
       AUDIO_STORAGE_DIR: /data/audio
       WHISPER_MODEL_CACHE_DIR: /models
       WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
+      AUDIO_RETENTION_DAYS: ${AUDIO_RETENTION_DAYS:-0}
     volumes:
       - audio_storage:/data/audio
       - model_weights:/models

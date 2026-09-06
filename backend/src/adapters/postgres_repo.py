@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
 from adapters.orm_models import JobRow, SegmentRow
@@ -86,6 +87,17 @@ class PostgresJobRepository:
             ],
         )
         self._session.commit()
+
+    def list_finished_jobs_before(self, cutoff: datetime) -> list[Job]:
+        stmt = select(JobRow).where(JobRow.status == "done", JobRow.created_at < cutoff)
+        rows = self._session.execute(stmt).scalars().all()
+        return [_job_from_row(row) for row in rows]
+
+    def count_active_jobs(self) -> int:
+        stmt = select(func.count()).select_from(JobRow).where(
+            JobRow.status.in_(["queued", "processing"])
+        )
+        return self._session.execute(stmt).scalar_one()
 
     def list_segments(self, job_id: UUID) -> list[Segment]:
         stmt = (

@@ -1,5 +1,4 @@
 import json
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,14 +11,19 @@ from rq import Queue
 
 from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
-from adapters.model_catalog import get_enabled_models
 from adapters.pdf_exporter import to_pdf
 from adapters.postgres_repo import PostgresJobRepository
 from api.deps import get_audio_probe, get_queue, get_repo
+from api.job_creation import (
+    ALLOWED_EXTENSIONS,
+    MAX_UPLOAD_BYTES,
+    check_concurrency_limit,
+    finalize_job,
+    storage_dir,
+)
 from api.schemas import JobOut
 from domain.exporters import TEXT_EXPORTERS
 from domain.models import DEFAULT_USER_ID
-from worker.tasks import transcribe_job
 
 ExportFormat = Literal["txt", "md", "json", "srt", "vtt", "pdf"]
 
@@ -35,16 +39,7 @@ EXPORT_MIME_TYPES: dict[str, str] = {
 router = APIRouter()
 
 SSE_POLL_INTERVAL_SECONDS = 1.0
-
-ALLOWED_EXTENSIONS = {".mp3", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".webm", ".mp4"}
-MAX_UPLOAD_BYTES = int(os.environ.get("AUDIO_MAX_SIZE_BYTES", str(500 * 1024 * 1024)))
 CHUNK_SIZE = 1024 * 1024
-
-
-def _storage_dir() -> Path:
-    path = Path(os.environ.get("AUDIO_STORAGE_DIR", "/data/audio"))
-    path.mkdir(parents=True, exist_ok=True)
-    return path
 
 
 def _save_upload(file: UploadFile, dest: Path) -> int:
@@ -78,38 +73,24 @@ def create_job(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Formato no soportado: {ext or 'desconocido'}")
 
-    enabled_models = {m.name for m in get_enabled_models()}
-    chosen_model = model or os.environ.get("WHISPER_MODEL", "tiny")
-    if chosen_model not in enabled_models:
-        raise HTTPException(400, f"Modelo no disponible: {chosen_model}")
+    check_concurrency_limit(repo)
 
     job_id = uuid4()
-    dest = _storage_dir() / f"{job_id}{ext}"
+    dest = storage_dir() / f"{job_id}{ext}"
     size_bytes = _save_upload(file, dest)
 
-    try:
-        audio_info = probe.probe(dest)
-    except ValueError:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(400, "No se pudo leer el archivo como audio")
-
-    if not audio_info.has_audio_stream:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(400, "El archivo no contiene una pista de audio")
-
-    job = repo.create_job(
-        id=job_id,
-        owner_id=DEFAULT_USER_ID,
+    return finalize_job(
+        job_id=job_id,
         original_filename=file.filename,
-        stored_path=str(dest),
+        dest=dest,
         mime_type=file.content_type,
         size_bytes=size_bytes,
-        duration_seconds=audio_info.duration_seconds,
-        model=chosen_model,
-        language=language or None,
+        model=model,
+        language=language,
+        repo=repo,
+        queue=queue,
+        probe=probe,
     )
-    queue.enqueue(transcribe_job, str(job.id), job_timeout=3600)
-    return JobOut.from_domain(job)
 
 
 @router.get("", response_model=list[JobOut])

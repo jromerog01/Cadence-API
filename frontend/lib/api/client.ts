@@ -49,6 +49,84 @@ export type UploadOptions = {
   language?: string | null
 }
 
+const InitUploadSchema = z.object({
+  upload_id: z.string(),
+  chunk_size: z.number(),
+  total_parts: z.number(),
+})
+
+function putChunk(url: string, blob: Blob, onLoaded: (loaded: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onLoaded(e.loaded)
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 400) reject(new Error(`chunk upload failed: ${xhr.status}`))
+      else resolve()
+    }
+    xhr.onerror = () => reject(new Error('network error'))
+    xhr.send(blob)
+  })
+}
+
+// A flaky mobile connection is exactly what chunked upload exists for, so a
+// failed chunk gets a few retries with backoff before giving up the whole
+// upload.
+async function putChunkWithRetry(
+  url: string,
+  blob: Blob,
+  onLoaded: (loaded: number) => void,
+  attempts = 3,
+): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await putChunk(url, blob, onLoaded)
+      return
+    } catch (err) {
+      if (attempt === attempts) throw err
+      await new Promise((r) => setTimeout(r, 500 * attempt))
+    }
+  }
+}
+
+// Uploads in 8MB chunks via /api/uploads/* instead of one multipart POST:
+// Cloudflare's free plan caps a single request at 100MB, and a WAV or a
+// long recording can easily exceed that.
+async function uploadJob(
+  file: File,
+  options: UploadOptions,
+  onProgress: (pct: number) => void,
+): Promise<Job> {
+  const initRes = await fetch(`${API_BASE}/uploads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      size_bytes: file.size,
+      model: options.model,
+      language: options.language,
+    }),
+  })
+  const { upload_id, chunk_size, total_parts } = await parseOrThrow(InitUploadSchema, initRes)
+
+  let uploadedBytes = 0
+  for (let part = 0; part < total_parts; part++) {
+    const start = part * chunk_size
+    const blob = file.slice(start, Math.min(start + chunk_size, file.size))
+    const baseBytes = uploadedBytes
+    await putChunkWithRetry(`${API_BASE}/uploads/${upload_id}/parts/${part}`, blob, (loaded) => {
+      onProgress(((baseBytes + loaded) / file.size) * 100)
+    })
+    uploadedBytes += blob.size
+    onProgress((uploadedBytes / file.size) * 100)
+  }
+
+  const completeRes = await fetch(`${API_BASE}/uploads/${upload_id}/complete`, { method: 'POST' })
+  return parseOrThrow(JobSchema, completeRes)
+}
+
 export const api = {
   listJobs: () =>
     fetch(`${API_BASE}/jobs`).then((res) => parseOrThrow(z.array(JobSchema), res)),
@@ -59,29 +137,5 @@ export const api = {
   listModels: () =>
     fetch(`${API_BASE}/models`).then((res) => parseOrThrow(z.array(ModelSchema), res)),
 
-  uploadJob: (file: File, options: UploadOptions, onProgress: (pct: number) => void) =>
-    new Promise<Job>((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${API_BASE}/jobs`)
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress((e.loaded / e.total) * 100)
-      }
-      xhr.onload = () => {
-        try {
-          if (xhr.status >= 400) {
-            reject(new Error(`upload failed: ${xhr.status}`))
-            return
-          }
-          resolve(JobSchema.parse(JSON.parse(xhr.responseText)))
-        } catch (err) {
-          reject(err)
-        }
-      }
-      xhr.onerror = () => reject(new Error('network error'))
-      const form = new FormData()
-      form.append('file', file)
-      if (options.model) form.append('model', options.model)
-      if (options.language) form.append('language', options.language)
-      xhr.send(form)
-    }),
+  uploadJob,
 }

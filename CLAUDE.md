@@ -60,6 +60,12 @@ docker compose exec api pytest
 # Logs de un servicio
 docker compose logs -f worker
 
+# Retención: borra audio de trabajos terminados más viejos que
+# AUDIO_RETENTION_DAYS (0 = nunca). Programar como cron del host, p. ej.
+# diario a las 3am: 0 3 * * * cd <repo> && docker compose exec -T worker \
+#   python -m worker.retention
+docker compose exec worker python -m worker.retention
+
 # Probar el flujo end-to-end con curl (Fase 1)
 ffmpeg -f lavfi -i "sine=frequency=440:duration=3" -ar 16000 -ac 1 /tmp/sample.wav
 curl -sf -X POST http://localhost:8000/api/jobs -F "file=@/tmp/sample.wav"
