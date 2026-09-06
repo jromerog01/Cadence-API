@@ -1,10 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronDown, Clock, FileAudio, Loader2, Search } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, ChevronDown, Clock, FileAudio, Loader2, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ExportMenu } from '@/components/export-menu'
-import type { Transcription, User } from '@/lib/mock-data'
+import { api } from '@/lib/api/client'
+import { toViewModel, type Transcription, type User } from '@/lib/api/view-models'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es', {
@@ -17,6 +19,8 @@ function formatDate(iso: string): string {
 function TranscriptionRow({ t }: { t: Transcription }) {
   const [open, setOpen] = useState(false)
   const processing = t.status === 'procesando'
+  const errored = t.status === 'error'
+  const expandable = t.status === 'listo'
 
   return (
     <article className="overflow-hidden rounded-xl border border-border bg-card">
@@ -36,6 +40,15 @@ function TranscriptionRow({ t }: { t: Transcription }) {
                 procesando
               </span>
             )}
+            {errored && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-[11px] text-destructive"
+                title={t.errorMessage ?? undefined}
+              >
+                <AlertCircle className="size-3" />
+                error
+              </span>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
@@ -48,10 +61,10 @@ function TranscriptionRow({ t }: { t: Transcription }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {!processing && <ExportMenu transcription={t} />}
+          {expandable && <ExportMenu transcription={t} />}
           <button
             onClick={() => setOpen((v) => !v)}
-            disabled={processing}
+            disabled={!expandable}
             aria-expanded={open}
             className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
@@ -63,7 +76,7 @@ function TranscriptionRow({ t }: { t: Transcription }) {
         </div>
       </div>
 
-      {open && !processing && (
+      {open && expandable && (
         <div className="border-t border-border bg-secondary/40 px-5 py-5">
           <ul className="flex flex-col gap-5">
             {t.segments.map((s, i) => (
@@ -74,9 +87,11 @@ function TranscriptionRow({ t }: { t: Transcription }) {
                   </span>
                 </div>
                 <div className="min-w-0 flex-1 border-l border-border pl-4">
-                  <p className="mb-1 text-xs font-semibold text-accent-foreground">
-                    {s.speaker}
-                  </p>
+                  {s.speaker && (
+                    <p className="mb-1 text-xs font-semibold text-accent-foreground">
+                      {s.speaker}
+                    </p>
+                  )}
                   <p className="text-pretty leading-relaxed text-foreground">
                     {s.text}
                   </p>
@@ -90,14 +105,16 @@ function TranscriptionRow({ t }: { t: Transcription }) {
   )
 }
 
-export function LibrarySection({
-  user,
-  transcriptions,
-}: {
-  user: User
-  transcriptions: Transcription[]
-}) {
+export function LibrarySection({ user }: { user: User }) {
   const [query, setQuery] = useState('')
+
+  const { data: jobs = [] } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: api.listJobs,
+    refetchInterval: 2000,
+  })
+
+  const transcriptions = useMemo(() => jobs.map(toViewModel), [jobs])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

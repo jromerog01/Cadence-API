@@ -1,4 +1,4 @@
-import type { Transcription } from './mock-data'
+import type { Transcription } from './api/view-models'
 
 export type ExportFormat = 'txt' | 'md' | 'pdf'
 

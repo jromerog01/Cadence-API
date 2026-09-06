@@ -2,7 +2,7 @@
 
 import { AudioLines } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { User } from '@/lib/mock-data'
+import type { User } from '@/lib/api/view-models'
 
 type View = 'upload' | 'library'
 

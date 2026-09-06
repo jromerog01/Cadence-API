@@ -72,6 +72,17 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-1g}
     networks: [cadence]
 
+  caddy:
+    build:
+      context: .
+      dockerfile: Caddyfile.Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    mem_limit: ${CADDY_MEM_LIMIT:-128m}
+    networks: [cadence]
+
 volumes:
   pgdata:
   audio_storage:

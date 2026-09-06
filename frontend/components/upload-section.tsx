@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   AudioLines,
   Check,
   FileAudio,
@@ -10,8 +11,9 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api/client'
 
-type Stage = 'uploading' | 'transcribing' | 'done'
+type Stage = 'uploading' | 'transcribing' | 'done' | 'error'
 
 type UploadItem = {
   id: string
@@ -19,12 +21,14 @@ type UploadItem = {
   size: string
   progress: number
   stage: Stage
+  jobId?: string
 }
 
 const stageLabel: Record<Stage, string> = {
   uploading: 'Subiendo',
   transcribing: 'Transcribiendo',
   done: 'Listo',
+  error: 'Error',
 }
 
 function formatSize(bytes: number): string {
@@ -32,60 +36,79 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+const POLL_INTERVAL_MS = 2000
+
 export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) {
   const [items, setItems] = useState<UploadItem[]>([])
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const simulate = useCallback((item: UploadItem) => {
-    const tick = () => {
-      setItems((prev) =>
-        prev.map((it) => {
-          if (it.id !== item.id) return it
-          const step = it.stage === 'uploading' ? 7 : 4
-          let progress = Math.min(100, it.progress + step + Math.random() * 6)
-          let stage = it.stage
-          if (it.stage === 'uploading' && progress >= 100) {
-            stage = 'transcribing'
-            progress = 0
-          } else if (it.stage === 'transcribing' && progress >= 100) {
-            stage = 'done'
-            progress = 100
-          }
-          return { ...it, progress, stage }
-        }),
-      )
-    }
-    const interval = setInterval(() => {
-      setItems((prev) => {
-        const current = prev.find((it) => it.id === item.id)
-        if (!current || current.stage === 'done') {
-          clearInterval(interval)
-          return prev
-        }
-        return prev
-      })
-      tick()
-    }, 320)
+  const updateItem = useCallback((id: string, patch: Partial<UploadItem>) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
   }, [])
+
+  const startUpload = useCallback(
+    (item: UploadItem, file: File) => {
+      api
+        .uploadJob(file, (pct) => updateItem(item.id, { progress: pct }))
+        .then((job) => {
+          updateItem(item.id, { jobId: job.id, stage: 'transcribing', progress: job.progress * 100 })
+        })
+        .catch(() => {
+          updateItem(item.id, { stage: 'error' })
+        })
+    },
+    [updateItem],
+  )
+
+  // Poll every in-flight job's status until it reaches a terminal state.
+  // SSE replaces this polling in Fase 4.
+  useEffect(() => {
+    const inFlight = items.filter((it) => it.stage === 'transcribing' && it.jobId)
+    if (inFlight.length === 0) return
+
+    const interval = setInterval(() => {
+      inFlight.forEach((it) => {
+        api
+          .getJob(it.jobId!)
+          .then((job) => {
+            if (job.status === 'done') {
+              updateItem(it.id, { stage: 'done', progress: 100 })
+            } else if (job.status === 'error') {
+              updateItem(it.id, { stage: 'error' })
+            } else {
+              updateItem(it.id, { progress: Math.round(job.progress * 100) })
+            }
+          })
+          .catch(() => updateItem(it.id, { stage: 'error' }))
+      })
+    }, POLL_INTERVAL_MS)
+
+    return () => clearInterval(interval)
+  }, [items, updateItem])
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
-      const audio = Array.from(files).filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|flac|aac)$/i.test(f.name))
+      const audio = Array.from(files).filter(
+        (f) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|flac|aac)$/i.test(f.name),
+      )
       const next = audio.map((f) => ({
-        id: crypto.randomUUID(),
-        name: f.name,
-        size: formatSize(f.size),
-        progress: 0,
-        stage: 'uploading' as Stage,
+        item: {
+          id: crypto.randomUUID(),
+          name: f.name,
+          size: formatSize(f.size),
+          progress: 0,
+          stage: 'uploading' as Stage,
+        },
+        file: f,
       }))
-      setItems((prev) => [...next, ...prev])
-      next.forEach(simulate)
+      setItems((prev) => [...next.map((n) => n.item), ...prev])
+      next.forEach(({ item, file }) => startUpload(item, file))
     },
-    [simulate],
+    [startUpload],
   )
 
-  const activeCount = items.filter((it) => it.stage !== 'done').length
+  const activeCount = items.filter((it) => it.stage !== 'done' && it.stage !== 'error').length
 
   return (
     <section className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
@@ -175,11 +198,15 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
                       'flex size-9 shrink-0 items-center justify-center rounded-lg',
                       it.stage === 'done'
                         ? 'bg-accent text-accent-foreground'
-                        : 'bg-muted text-muted-foreground',
+                        : it.stage === 'error'
+                          ? 'bg-destructive/10 text-destructive'
+                          : 'bg-muted text-muted-foreground',
                     )}
                   >
                     {it.stage === 'done' ? (
                       <Check className="size-4" />
+                    ) : it.stage === 'error' ? (
+                      <AlertTriangle className="size-4" />
                     ) : (
                       <AudioLines className="size-4" />
                     )}
@@ -200,17 +227,19 @@ export function UploadSection({ onViewLibrary }: { onViewLibrary: () => void }) 
                             'h-full rounded-full transition-all duration-300',
                             it.stage === 'done'
                               ? 'bg-accent'
-                              : 'bg-primary',
+                              : it.stage === 'error'
+                                ? 'bg-destructive'
+                                : 'bg-primary',
                           )}
                           style={{ width: `${it.progress}%` }}
                         />
                       </div>
                       <span className="flex w-28 shrink-0 items-center justify-end gap-1.5 font-mono text-xs text-muted-foreground">
-                        {it.stage !== 'done' && (
+                        {it.stage !== 'done' && it.stage !== 'error' && (
                           <Loader2 className="size-3 animate-spin" />
                         )}
                         {stageLabel[it.stage]}
-                        {it.stage !== 'done' && ` ${Math.round(it.progress)}%`}
+                        {it.stage !== 'done' && it.stage !== 'error' && ` ${Math.round(it.progress)}%`}
                       </span>
                     </div>
                   </div>

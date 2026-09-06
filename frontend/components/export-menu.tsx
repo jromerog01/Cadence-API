@@ -7,7 +7,7 @@ import {
   exportTranscription,
   type ExportFormat,
 } from '@/lib/export-utils'
-import type { Transcription } from '@/lib/mock-data'
+import type { Transcription } from '@/lib/api/view-models'
 
 const options: { format: ExportFormat; label: string; hint: string; icon: typeof FileText }[] = [
   { format: 'txt', label: 'Texto plano', hint: '.txt', icon: FileText },
