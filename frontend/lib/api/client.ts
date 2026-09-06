@@ -142,6 +142,11 @@ export const api = {
   getJob: (id: string) =>
     fetch(`${API_BASE}/jobs/${id}`).then((res) => parseOrThrow(JobSchema, res)),
 
+  deleteJob: (id: string) =>
+    fetch(`${API_BASE}/jobs/${id}`, { method: 'DELETE' }).then((res) => {
+      if (!res.ok) throw new Error(`delete failed: ${res.status}`)
+    }),
+
   listModels: () =>
     fetch(`${API_BASE}/models`).then((res) => parseOrThrow(z.array(ModelSchema), res)),
 

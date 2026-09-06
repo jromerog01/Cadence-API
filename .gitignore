@@ -23,6 +23,9 @@ model_weights/
 # design source archives (kept in docs/ via git add -f)
 *.zip
 
+# postgres backups (scripts/backup.sh)
+backups/
+
 # IDE
 .idea/
 .vscode/

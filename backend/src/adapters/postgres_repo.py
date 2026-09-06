@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.orm import Session
 
 from adapters.orm_models import JobRow, SegmentRow, UserRow
@@ -128,10 +128,33 @@ class PostgresJobRepository:
         )
         self._session.commit()
 
+    def clear_segments(self, job_id: UUID) -> None:
+        self._session.execute(
+            SegmentRow.__table__.delete().where(SegmentRow.job_id == job_id)
+        )
+        self._session.commit()
+
     def list_finished_jobs_before(self, cutoff: datetime) -> list[Job]:
         stmt = select(JobRow).where(JobRow.status == "done", JobRow.created_at < cutoff)
         rows = self._session.execute(stmt).scalars().all()
         return [_job_from_row(row) for row in rows]
+
+    def delete_job(self, job_id: UUID) -> None:
+        row = self._session.get(JobRow, job_id)
+        if row is None:
+            return
+        self._session.delete(row)  # segments cascade via ON DELETE CASCADE
+        self._session.commit()
+
+    def mark_stuck_processing_as_error(self, message: str) -> int:
+        stmt = (
+            update(JobRow)
+            .where(JobRow.status == "processing")
+            .values(status="error", stage=None, error_message=message)
+        )
+        result = self._session.execute(stmt)
+        self._session.commit()
+        return result.rowcount
 
     def count_active_jobs(self) -> int:
         stmt = select(func.count()).select_from(JobRow).where(

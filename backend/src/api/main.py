@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 
+from adapters.logging_config import configure_logging
 from api.routes import auth, health, jobs, models, uploads
+
+configure_logging()
 
 app = FastAPI(title="Cadence API")
 

@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from adapters.ffmpeg_probe import normalize_to_wav
 from adapters.postgres_repo import PostgresJobRepository
 from adapters.whisper_engine import WhisperEngine
 from domain.models import Segment
+
+logger = logging.getLogger("cadence.worker")
 
 BATCH_SIZE = 20
 
@@ -61,7 +64,13 @@ def transcribe_job(job_id: str) -> None:
         session.close()
         return
 
-    repo.update_job(job.id, status="processing", stage="normalizing", started_at=_utcnow())
+    logger.info("job started", extra={"job_id": job_id, "model": job.model})
+    # A retry (RQ Retry, see job_creation.py) re-runs this from scratch on
+    # the same job_id, so clear whatever a previous attempt already wrote.
+    repo.clear_segments(job.id)
+    repo.update_job(
+        job.id, status="processing", stage="normalizing", progress=0.0, started_at=_utcnow()
+    )
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
             normalized_path = Path(tmp_dir) / "normalized.wav"
@@ -81,7 +90,9 @@ def transcribe_job(job_id: str) -> None:
                 detected_language=info.detected_language,
                 finished_at=_utcnow(),
             )
+            logger.info("job done", extra={"job_id": job_id})
     except Exception as exc:
+        logger.exception("job failed", extra={"job_id": job_id})
         repo.update_job(job.id, status="error", error_message=str(exc), finished_at=_utcnow())
         raise
     finally:

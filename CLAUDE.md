@@ -69,6 +69,10 @@ docker compose exec api python -m api.cli create-user correo@ejemplo.com "contra
 #   python -m worker.retention
 docker compose exec worker python -m worker.retention
 
+# Backup de Postgres (gzip, timestamped en backups/); programar por cron
+# igual que la retención. Restaurar: ver el comentario en el script.
+./scripts/backup.sh
+
 # Probar el flujo end-to-end con curl (Fase 1)
 ffmpeg -f lavfi -i "sine=frequency=440:duration=3" -ar 16000 -ac 1 /tmp/sample.wav
 curl -sf -X POST http://localhost:8000/api/jobs -F "file=@/tmp/sample.wav"
@@ -120,3 +124,17 @@ curl -sf http://localhost:8000/api/jobs/<id>
 - `segments.speaker` es nullable desde la primera migración — el frontend
   simplemente no dibuja el chip de hablante cuando es `NULL` (diarización es
   Fase 9, opcional).
+
+## Fase 9 (diarización) — pendiente, cortada deliberadamente
+
+No implementada todavía. `pyannote.audio` necesita: (1) un token de
+Hugging Face y aceptar la licencia del modelo — ninguna sesión de
+desarrollo automatizada tiene eso, hay que hacerlo con la cuenta del
+usuario; (2) PyTorch (varios GB), que no se instaló aquí para no arriesgar
+esta máquina de desarrollo con poca RAM libre; (3) medir el costo real en
+el ProDesk antes de prometerlo en la interfaz (plan sección 1: pyannote en
+4 núcleos ronda 0.5–1× la duración del audio). El puerto `Diarizer` ya
+existe en `domain/ports.py` y `segments.speaker` ya es nullable — falta
+únicamente `adapters/pyannote_diarizer.py` y la etapa `diarizing` en el
+worker, que se pueden añadir sin tocar nada de lo demás cuando haya token
+de HF y se haya medido en el ProDesk.

@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from rq import Queue
+from rq.job import Job as RQJob
 
 from adapters.db import new_session
 from adapters.ffmpeg_probe import FfmpegAudioProbe
@@ -114,6 +115,26 @@ def get_job(
     if job is None or job.owner_id != current_user.id:
         raise HTTPException(404, "Job not found")
     return JobOut.from_domain(job)
+
+
+@router.delete("/{job_id}", status_code=204)
+def delete_job(
+    job_id: UUID,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+    queue: Queue = Depends(get_queue),
+):
+    job = repo.get_job(job_id, include_segments=False)
+    if job is None or job.owner_id != current_user.id:
+        raise HTTPException(404, "Job not found")
+
+    try:
+        RQJob.fetch(str(job_id), connection=queue.connection).cancel()
+    except Exception:
+        pass  # already started, already finished, or never queued — fine either way
+
+    Path(job.stored_path).unlink(missing_ok=True)
+    repo.delete_job(job_id)
 
 
 @router.get("/{job_id}/export")

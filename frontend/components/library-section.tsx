@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, ChevronDown, Clock, FileAudio, Loader2, Search } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, ChevronDown, Clock, FileAudio, Loader2, Search, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ExportMenu } from '@/components/export-menu'
 import { api, type AuthUser } from '@/lib/api/client'
@@ -16,7 +16,7 @@ function formatDate(iso: string): string {
   })
 }
 
-function TranscriptionRow({ t }: { t: Transcription }) {
+function TranscriptionRow({ t, onDelete }: { t: Transcription; onDelete: (id: string) => void }) {
   const [open, setOpen] = useState(false)
   const processing = t.status === 'procesando'
   const errored = t.status === 'error'
@@ -73,6 +73,14 @@ function TranscriptionRow({ t }: { t: Transcription }) {
               className={cn('size-3.5 transition-transform', open && 'rotate-180')}
             />
           </button>
+          <button
+            onClick={() => onDelete(t.id)}
+            aria-label={`Eliminar ${t.title}`}
+            title={processing ? 'Cancelar' : 'Eliminar'}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" />
+          </button>
         </div>
       </div>
 
@@ -107,12 +115,17 @@ function TranscriptionRow({ t }: { t: Transcription }) {
 
 export function LibrarySection({ user }: { user: AuthUser }) {
   const [query, setQuery] = useState('')
+  const queryClient = useQueryClient()
 
   const { data: jobs = [] } = useQuery({
     queryKey: ['jobs'],
     queryFn: api.listJobs,
     refetchInterval: 2000,
   })
+
+  const handleDelete = (id: string) => {
+    api.deleteJob(id).then(() => queryClient.invalidateQueries({ queryKey: ['jobs'] }))
+  }
 
   const transcriptions = useMemo(() => jobs.map(toViewModel), [jobs])
 
@@ -164,7 +177,7 @@ export function LibrarySection({ user }: { user: AuthUser }) {
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((t) => (
-            <TranscriptionRow key={t.id} t={t} />
+            <TranscriptionRow key={t.id} t={t} onDelete={handleDelete} />
           ))}
         </div>
       )}

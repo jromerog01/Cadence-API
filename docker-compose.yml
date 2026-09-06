@@ -58,7 +58,7 @@ services:
   worker:
     build:
       context: ./backend
-    command: ["rq", "worker", "-u", "redis://redis:6379/0", "transcriptions"]
+    command: ["python", "-m", "worker.run"]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
       REDIS_URL: redis://redis:6379/0

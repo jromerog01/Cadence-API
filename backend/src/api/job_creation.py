@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException
-from rq import Queue
+from rq import Queue, Retry
 
 from adapters.ffmpeg_probe import FfmpegAudioProbe
 from adapters.model_catalog import get_enabled_models
@@ -71,5 +71,11 @@ def finalize_job(
         model=chosen_model,
         language=language or None,
     )
-    queue.enqueue(transcribe_job, str(job.id), job_timeout=3600)
+    queue.enqueue(
+        transcribe_job,
+        str(job.id),
+        job_id=str(job.id),
+        job_timeout=3600,
+        retry=Retry(max=2, interval=[10, 60]),
+    )
     return JobOut.from_domain(job)

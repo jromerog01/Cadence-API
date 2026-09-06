@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from adapters.db import new_session
+from adapters.logging_config import configure_logging
 from adapters.postgres_repo import PostgresJobRepository
 
 logger = logging.getLogger("cadence.retention")
@@ -42,7 +43,7 @@ def purge_old_audio(retention_days: int) -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging()
     days = int(os.environ.get("AUDIO_RETENTION_DAYS", "0"))
     count = purge_old_audio(days)
     logger.info("purged %d audio file(s) older than %d day(s)", count, days)
