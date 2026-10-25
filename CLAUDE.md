@@ -81,6 +81,14 @@ curl -sf http://localhost:8000/api/jobs/<id>
 
 ## Trampas conocidas
 
+### iOS (estado inicial)
+
+- Swift 6.4.1, xtool 1.22.2, SDK iOS 27.0 instalado; destino mínimo iOS 26.
+- `xtool` es un AppImage: en entornos sin FUSE se puede ejecutar el `AppRun` extraído con `xtool --appimage-extract`.
+- `swift test` en Linux compila solo `CadenceKit`; `Package.swift` excluye el target SwiftUI en Linux.
+- Swift `JSONDecoder` necesita una estrategia ISO 8601 propia para fechas del backend con microsegundos; `CadenceKit.APIJSON` también aplica `convertFromSnakeCase`.
+- Pendiente de verificar en iPhone real: firma, capacidades, SpeechTranscriber, Liquid Glass, logs, icono y share extension. No había dispositivo conectado en esta sesión.
+
 - **El generador de faster-whisper es perezoso.** `model.transcribe()`
   vuelve de inmediato; el trabajo real ocurre al iterar los segmentos. Causa
   #1 de barras de progreso que saltan de 0 a 100.

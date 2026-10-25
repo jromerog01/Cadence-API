@@ -32,3 +32,8 @@ backups/
 
 # OS
 .DS_Store
+
+# SwiftPM / xtool
+ios/.build/
+ios/.swiftpm/
+ios/xtool/
