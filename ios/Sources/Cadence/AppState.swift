@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import CryptoKit
 import Speech
+import UserNotifications
 
 @MainActor @Observable final class AppState {
     var server = UserDefaults.standard.string(forKey: "serverURL") ?? ""
@@ -22,6 +23,7 @@ import Speech
     @ObservationIgnored private let localStore = FileJobStore(root:
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "DeviceJobs"))
     @ObservationIgnored private var serverCache: FileJobStore?
+    @ObservationIgnored private let continuedRunner = ContinuedProcessingRunner()
     var liveProgress: [String: Double] = [:]
     @ObservationIgnored private var watchers: [String: Task<Void, Never>] = [:]
 
@@ -122,7 +124,21 @@ import Speech
         catch { handle(error) }
     }
 
-    func transcribeLocally(file: URL, filename: String, language: String, resumeID: String? = nil) async {
+    func startLocal(file: URL, filename: String, language: String, resumeID: String? = nil) async {
+        guard activeLocalID == nil, !continuedRunner.isScheduled else { return }
+        let id = resumeID ?? UUID().uuidString
+        do {
+            _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            try continuedRunner.start(title: "Transcribiendo \(filename)") { [self] in
+                await transcribeLocally(file: file, filename: filename, language: language, resumeID: id)
+                return localRecords[id]?.job.status == "done"
+            }
+        } catch {
+            await transcribeLocally(file: file, filename: filename, language: language, resumeID: id)
+        }
+    }
+
+    private func transcribeLocally(file: URL, filename: String, language: String, resumeID: String? = nil) async {
         guard activeLocalID == nil else { return }
         var audio = file
         if resumeID == nil, let item = pendingInboxItem,
@@ -138,7 +154,7 @@ import Speech
             } catch { handle(error); return }
         }
         var record = resumeID.flatMap { localRecords[$0] } ?? StoredJob(
-            job: Job(originalFilename: filename, model: "apple-speech", language: language),
+            job: Job(id: resumeID ?? UUID().uuidString, originalFilename: filename, model: "apple-speech", language: language),
             origin: .device, audioPath: audio.path)
         activeLocalID = record.job.id
         defer { activeLocalID = nil }
@@ -154,6 +170,7 @@ import Speech
             for try await event in AppleSpeechEngine().transcribe(request) {
                 switch event {
                 case let .progress(fraction, _):
+                    continuedRunner.update(fraction)
                     record.job.progress = fraction
                     liveProgress[record.job.id] = fraction
                 case let .segments(segments):
@@ -165,6 +182,11 @@ import Speech
                     job.createdAt = record.job.createdAt
                     record.job = job
                     try await localStore.save(record)
+                    let content = UNMutableNotificationContent()
+                    content.title = "Transcripción lista"
+                    content.body = job.originalFilename
+                    content.userInfo = ["job_id": job.id]
+                    try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: job.id, content: content, trigger: nil))
                 }
                 localRecords[record.job.id] = record
                 if let index = jobs.firstIndex(where: { $0.id == record.job.id }) { jobs[index] = record.job }
@@ -181,7 +203,7 @@ import Speech
 
     func resumeLocal(_ id: String) async {
         guard let record = localRecords[id], let audio = record.audioPath else { return }
-        await transcribeLocally(file: URL(fileURLWithPath: audio), filename: record.job.originalFilename,
+        await startLocal(file: URL(fileURLWithPath: audio), filename: record.job.originalFilename,
                                 language: record.job.language ?? "es", resumeID: id)
     }
 

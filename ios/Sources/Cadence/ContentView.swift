@@ -182,7 +182,7 @@ private struct NewJobView: View {
                             let filename = state.pendingInboxItem?.filename ?? file.lastPathComponent
                             state.importedAudio = nil
                             dismiss()
-                            await state.transcribeLocally(file: file, filename: filename, language: language)
+                            await state.startLocal(file: file, filename: filename, language: language)
                             return
                         }
                         await state.upload(file: file, filename: state.pendingInboxItem?.filename, model: model, language: language)

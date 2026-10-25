@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleDisplayName</key><string>Cadence</string>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array><string>com.jesusrg.cadence.transcribe.*</string><string>com.jesusrg.cadence.refresh</string></array>
+    <key>UIBackgroundModes</key><array><string>processing</string><string>fetch</string><string>audio</string></array>
+    <key>NSMicrophoneUsageDescription</key><string>Cadence usa el micrófono cuando eliges grabar audio.</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>Cadence transcribe tus audios en este iPhone.</string>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLSchemes</key><array><string>cadence</string></array>
+    </dict></array>
+    <key>CFBundleDocumentTypes</key><array><dict>
+        <key>CFBundleTypeName</key><string>Audio y video</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>public.audio</string><string>public.movie</string></array>
+    </dict></array>
+    <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+</dict></plist>
