@@ -15,7 +15,7 @@ from domain.models import User
 
 
 def test_token_login_bearer_and_cookie(monkeypatch):
-    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret-with-at-least-thirty-two-characters")
     user = User(uuid4(), "ana@example.com", hash_password("correcta"), "Ana")
 
     class Users:
@@ -27,7 +27,7 @@ def test_token_login_bearer_and_cookie(monkeypatch):
 
     app.dependency_overrides[get_user_repo] = lambda: Users()
     try:
-        with TestClient(app) as client:
+        with TestClient(app, base_url="https://testserver") as client:
             payload = {"email": user.email, "password": "correcta"}
             response = client.post("/api/auth/token", json=payload)
             assert response.status_code == 200
@@ -36,7 +36,7 @@ def test_token_login_bearer_and_cookie(monkeypatch):
             assert response.json()["user"]["id"] == str(user.id)
             assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 200
             assert client.get("/api/auth/me", headers={"Authorization": "Bearer invalid"}).status_code == 401
-            expired = jwt.encode({"sub": str(user.id), "exp": datetime.now(timezone.utc) - timedelta(seconds=1)}, "test-secret", algorithm="HS256")
+            expired = jwt.encode({"sub": str(user.id), "exp": datetime.now(timezone.utc) - timedelta(seconds=1)}, "test-secret-with-at-least-thirty-two-characters", algorithm="HS256")
             assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {expired}"}).status_code == 401
             assert client.post("/api/auth/token", json={**payload, "password": "mal"}).status_code == 401
             login = client.post("/api/auth/login", json=payload)

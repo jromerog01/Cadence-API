@@ -56,6 +56,11 @@ class InitUploadOut(BaseModel):
     total_parts: int
 
 
+class UploadStatusOut(BaseModel):
+    total_parts: int
+    received: list[int]
+
+
 @router.post("", response_model=InitUploadOut)
 def init_upload(
     payload: InitUploadIn,
@@ -94,6 +99,20 @@ def init_upload(
 def _check_owner(meta: dict, current_user: User) -> None:
     if meta.get("owner_id") != str(current_user.id):
         raise HTTPException(404, "Sesión de subida no encontrada")
+
+
+@router.get("/{upload_id}", response_model=UploadStatusOut)
+def upload_status(upload_id: uuid.UUID, current_user: User = Depends(get_current_user)):
+    session_dir = _session_dir(str(upload_id))
+    meta = _read_meta(session_dir)
+    _check_owner(meta, current_user)
+    received = sorted(
+        int(path.name.removeprefix("part-"))
+        for path in session_dir.glob("part-?????")
+        if path.name.removeprefix("part-").isdigit()
+        and int(path.name.removeprefix("part-")) < meta["total_parts"]
+    )
+    return UploadStatusOut(total_parts=meta["total_parts"], received=received)
 
 
 @router.put("/{upload_id}/parts/{part_number}")
