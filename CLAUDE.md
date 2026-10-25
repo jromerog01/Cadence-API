@@ -85,7 +85,7 @@ curl -sf http://localhost:8000/api/jobs/<id>
 
 - Swift 6.4.1, xtool 1.22.2, SDK iOS 27.0 instalado; destino mínimo iOS 26.
 - `xtool` es un AppImage: en entornos sin FUSE se puede ejecutar el `AppRun` extraído con `xtool --appimage-extract`.
-- `swift test` en Linux compila solo `CadenceKit`; `Package.swift` excluye el target SwiftUI en Linux.
+- `swift test` se ejecuta en `ios/CadenceKit` en Linux; la app raíz es un paquete xtool separado con un solo producto.
 - Swift `JSONDecoder` necesita una estrategia ISO 8601 propia para fechas del backend con microsegundos; `CadenceKit.APIJSON` también aplica `convertFromSnakeCase`.
 - Pendiente de verificar en iPhone real: firma, capacidades, SpeechTranscriber, Liquid Glass, logs, icono y share extension. No había dispositivo conectado en esta sesión.
 

@@ -35,5 +35,8 @@ backups/
 
 # SwiftPM / xtool
 ios/.build/
+ios/CadenceKit/.build/
 ios/.swiftpm/
+ios/CadenceKit/.swiftpm/
 ios/xtool/
+ios/.bsp/
