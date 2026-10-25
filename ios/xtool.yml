@@ -1,2 +1,9 @@
 version: 1
 bundleID: com.jesusrg.cadence
+product: Cadence
+entitlementsPath: Resources/Cadence.entitlements
+extensions:
+  - product: CadenceShare
+    bundleID: com.jesusrg.cadence.share
+    infoPath: Resources/CadenceShare-Info.plist
+    entitlementsPath: Resources/Cadence.entitlements

@@ -12,6 +12,7 @@ import Observation
     var uploadProgress: Double?
     var models: [ModelInfo] = []
     var importedAudio: URL?
+    var pendingInboxItem: InboxItem?
     var liveProgress: [String: Double] = [:]
     @ObservationIgnored private var watchers: [String: Task<Void, Never>] = [:]
 
@@ -97,7 +98,19 @@ import Observation
         } catch { handle(error) }
     }
 
-    func upload(file: URL, model: String, language: String?) async {
+    func checkInbox() {
+        guard importedAudio == nil,
+              let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.jesusrg.cadence") else { return }
+        do {
+            let inbox = Inbox(root: group.appending(path: "Inbox"))
+            if let item = try inbox.pending().first {
+                pendingInboxItem = item
+                importedAudio = item.fileURL(in: inbox.root)
+            }
+        } catch { handle(error) }
+    }
+
+    func upload(file: URL, filename: String? = nil, model: String, language: String?) async {
         uploadProgress = 0
         defer { uploadProgress = nil }
         do {
@@ -107,7 +120,7 @@ import Observation
                 throw APIError.server(413, "El archivo debe medir entre 1 byte y 500 MB")
             }
             let initBody = try APIJSON.encoder().encode(InitUploadRequest(
-                filename: file.lastPathComponent, sizeBytes: size, model: model,
+                filename: filename ?? file.lastPathComponent, sizeBytes: size, model: model,
                 language: language?.isEmpty == true ? nil : language
             ))
             let session: InitUploadResponse = try await client.request("api/uploads", method: "POST", body: initBody)
@@ -128,6 +141,11 @@ import Observation
                 uploadProgress = Double(range.upperBound) / Double(size)
             }
             let _: Job = try await client.request("api/uploads/\(session.uploadId)/complete", method: "POST")
+            if let item = pendingInboxItem,
+               let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.jesusrg.cadence") {
+                try Inbox(root: group.appending(path: "Inbox")).remove(item)
+                pendingInboxItem = nil
+            }
             await refresh()
         } catch { handle(error) }
     }

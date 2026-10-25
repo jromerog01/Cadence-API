@@ -21,10 +21,13 @@ struct ContentView: View {
                 }
             }
         }
-        .task { await state.restore() }
+        .task { await state.restore(); state.checkInbox() }
         .onOpenURL { state.receiveAudio($0) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active, state.token != nil { Task { await state.refresh() } }
+            if phase == .active, state.token != nil {
+                state.checkInbox()
+                Task { await state.refresh() }
+            }
             else { state.stopWatching() }
         }
         .alert("Cadence", isPresented: Binding(
@@ -143,7 +146,7 @@ private struct NewJobView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Audio") { Text(file.lastPathComponent) }
+                Section("Audio") { Text(state.pendingInboxItem?.filename ?? file.lastPathComponent) }
                 Section("Transcripción") {
                     Picker("Modelo", selection: $model) {
                         ForEach(state.models, id: \.name) { item in
@@ -158,7 +161,8 @@ private struct NewJobView: View {
                 }
                 Button("Transcribir en servidor") {
                     Task {
-                        await state.upload(file: file, model: model, language: language)
+                        await state.upload(file: file, filename: state.pendingInboxItem?.filename,
+                                           model: model, language: language)
                         if state.uploadProgress == nil && state.errorMessage == nil {
                             state.importedAudio = nil
                             dismiss()
@@ -171,6 +175,10 @@ private struct NewJobView: View {
             .toolbar { Button("Cancelar") { state.importedAudio = nil; dismiss() } }
             .task {
                 await state.loadModels()
+                if let pending = state.pendingInboxItem {
+                    model = pending.model
+                    language = pending.language ?? ""
+                }
                 if !state.models.contains(where: { $0.name == model }) { model = state.models.first?.name ?? model }
             }
         }
