@@ -1,6 +1,8 @@
 import CadenceKit
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
+import QuickLook
 
 struct ContentView: View {
     @State private var state = AppState()
@@ -179,6 +181,8 @@ private struct JobDetailView: View {
     @Bindable var state: AppState
     let id: String
     @State private var job: Job?
+    @State private var exportedFile: URL?
+    @State private var previewFile: URL?
 
     var body: some View {
         Group {
@@ -196,7 +200,7 @@ private struct JobDetailView: View {
                     Section("Transcripción") {
                         ForEach(job.segments, id: \.idx) { segment in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(segment.startSeconds.formatted(.number.precision(.fractionLength(1))) + " s")
+                                Text(String(format: "%.1f s", segment.startSeconds))
                                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 Text(segment.text).textSelection(.enabled)
                             }
@@ -208,12 +212,54 @@ private struct JobDetailView: View {
         }
         .navigationTitle(job?.originalFilename ?? "Trabajo")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let job, job.status == "done" {
+                Menu("Compartir", systemImage: "square.and.arrow.up") {
+                    ForEach(["txt", "md", "json", "srt", "vtt", "pdf"], id: \.self) { format in
+                        Button(format.uppercased()) { Task { await export(format) } }
+                    }
+                    Button("Copiar texto") {
+                        UIPasteboard.general.string = job.segments.map(\.text).joined(separator: "\n\n")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { exportedFile != nil },
+            set: { if !$0 { exportedFile = nil } }
+        )) {
+            if let file = exportedFile {
+                NavigationStack {
+                    VStack(spacing: 20) {
+                        Text(file.lastPathComponent)
+                        ShareLink(item: file) { Label("Compartir archivo", systemImage: "square.and.arrow.up") }
+                        if file.pathExtension == "pdf" {
+                            Button("Vista previa") { previewFile = file }
+                        }
+                    }
+                    .padding()
+                    .navigationTitle("Exportación")
+                    .toolbar { Button("Cerrar") { exportedFile = nil } }
+                }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { previewFile != nil },
+            set: { if !$0 { previewFile = nil } }
+        )) {
+            if let file = previewFile { PDFPreview(file: file) }
+        }
         .task { await load() }
         .refreshable { await load() }
     }
 
     private func load() async {
         do { job = try await state.job(id) }
+        catch { state.errorMessage = error.localizedDescription }
+    }
+
+    private func export(_ format: String) async {
+        do { exportedFile = try await state.export(jobID: id, format: format) }
         catch { state.errorMessage = error.localizedDescription }
     }
 }

@@ -136,6 +136,10 @@ import Observation
         try await client().request("api/jobs/\(id)")
     }
 
+    func export(jobID: String, format: String) async throws -> URL {
+        try await client().export(jobID: jobID, format: format)
+    }
+
     func delete(_ id: String) async {
         do {
             try await client().delete("api/jobs/\(id)")

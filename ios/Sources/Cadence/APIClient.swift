@@ -103,4 +103,24 @@ struct APIClient: Sendable {
             continuation.onTermination = { @Sendable _ in task.cancel() }
         }
     }
+
+    func export(jobID: String, format: String) async throws -> URL {
+        var components = URLComponents(url: baseURL.appending(path: "api/jobs/\(jobID)/export"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "format", value: format)]
+        var request = URLRequest(url: components.url!)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw APIError.server(0, "Respuesta inválida") }
+        if response.statusCode == 401 { throw APIError.unauthorized }
+        guard response.statusCode == 200 else { throw APIError.server(response.statusCode, "No se pudo exportar") }
+        let disposition = response.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let filename = disposition.components(separatedBy: "filename*=UTF-8''").dropFirst().first?
+            .components(separatedBy: ";").first?.removingPercentEncoding ?? "transcripcion.\(format)"
+        let safeName = URL(fileURLWithPath: filename).lastPathComponent
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appending(path: safeName)
+        try data.write(to: file, options: .atomic)
+        return file
+    }
 }
