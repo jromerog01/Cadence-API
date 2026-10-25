@@ -59,6 +59,7 @@ class JobRow(Base):
     progress: Mapped[float] = mapped_column(Numeric(), nullable=False, server_default="0")
     stage: Mapped[str | None] = mapped_column(String(), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    word_count: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -8,8 +8,9 @@ async function downloadFromApi(jobId: string, format: ExportFormat, fallbackFile
     throw new Error(`export failed: ${res.status}`)
   }
   const disposition = res.headers.get('Content-Disposition')
-  const match = disposition?.match(/filename="([^"]+)"/)
-  const filename = match?.[1] ?? fallbackFilename
+  const utf8Match = disposition?.match(/filename\*=UTF-8''([^;]+)/)
+  const asciiMatch = disposition?.match(/filename="([^"]+)"/)
+  const filename = (utf8Match ? decodeURIComponent(utf8Match[1]) : asciiMatch?.[1]) ?? fallbackFilename
 
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)

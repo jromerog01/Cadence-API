@@ -3,6 +3,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Literal
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -157,10 +158,20 @@ def export_job(
         content = TEXT_EXPORTERS[format](job).encode("utf-8")
 
     base_name = Path(job.original_filename).stem
+    filename = f"{base_name}.{format}"
+    # Content-Disposition headers are latin-1 only; a tilde or ñ in the
+    # original filename raises UnicodeEncodeError unless it's RFC 5987
+    # percent-encoded in a filename* fallback.
+    ascii_filename = filename.encode("ascii", "replace").decode("ascii").replace("?", "_")
     return Response(
         content=content,
         media_type=EXPORT_MIME_TYPES[format],
-        headers={"Content-Disposition": f'attachment; filename="{base_name}.{format}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_filename}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
     )
 
 

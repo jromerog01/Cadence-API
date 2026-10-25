@@ -8,6 +8,12 @@ import { ExportMenu } from '@/components/export-menu'
 import { api, type AuthUser } from '@/lib/api/client'
 import { toViewModel, type Transcription } from '@/lib/api/view-models'
 
+const STAGE_LABELS: Record<string, string> = {
+  normalizing: 'normalizando',
+  transcribing: 'transcribiendo',
+  diarizing: 'diarizando',
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('es', {
     day: 'numeric',
@@ -20,10 +26,25 @@ function TranscriptionRow({ t, onDelete }: { t: Transcription; onDelete: (id: st
   const [open, setOpen] = useState(false)
   const processing = t.status === 'procesando'
   const errored = t.status === 'error'
-  const expandable = t.status === 'listo'
+  const expandable = t.status === 'listo' || processing
+
+  // The jobs list endpoint never includes segment text (too expensive to
+  // load for every row), so viewing a transcript requires fetching the
+  // full job detail — polled while processing to show text as it's
+  // transcribed, fetched once for finished jobs.
+  const { data: detail } = useQuery({
+    queryKey: ['job', t.id],
+    queryFn: () => api.getJob(t.id).then(toViewModel),
+    enabled: open && expandable,
+    refetchInterval: open && processing ? 2000 : false,
+  })
+  const segments = detail?.segments ?? []
 
   return (
-    <article className="overflow-hidden rounded-xl border border-border bg-card">
+    // No overflow-hidden here: it would clip the export dropdown/error
+    // tooltip, which are absolutely positioned and can extend past this
+    // card's own box (that's what was cutting them off on narrow screens).
+    <article className="rounded-xl border border-border bg-card">
       <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
           <FileAudio className="size-5" />
@@ -37,7 +58,9 @@ function TranscriptionRow({ t, onDelete }: { t: Transcription; onDelete: (id: st
             {processing && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
-                procesando
+                {t.stage && STAGE_LABELS[t.stage] ? STAGE_LABELS[t.stage] : 'procesando'}
+                {' · '}
+                {Math.round(t.progress * 100)}%
               </span>
             )}
             {errored && (
@@ -58,10 +81,18 @@ function TranscriptionRow({ t, onDelete }: { t: Transcription; onDelete: (id: st
             <span>{t.words.toLocaleString('es')} palabras</span>
             <span>{formatDate(t.createdAt)}</span>
           </div>
+          {processing && (
+            <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-foreground transition-all"
+                style={{ width: `${Math.round(t.progress * 100)}%` }}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {expandable && <ExportMenu transcription={t} />}
+          {t.status === 'listo' && <ExportMenu transcription={t} />}
           <button
             onClick={() => setOpen((v) => !v)}
             disabled={!expandable}
@@ -85,9 +116,14 @@ function TranscriptionRow({ t, onDelete }: { t: Transcription; onDelete: (id: st
       </div>
 
       {open && expandable && (
-        <div className="border-t border-border bg-secondary/40 px-5 py-5">
+        <div className="overflow-hidden rounded-b-xl border-t border-border bg-secondary/40 px-5 py-5">
+          {segments.length === 0 && processing && (
+            <p className="text-sm text-muted-foreground">
+              Esperando los primeros segmentos…
+            </p>
+          )}
           <ul className="flex flex-col gap-5">
-            {t.segments.map((s, i) => (
+            {segments.map((s, i) => (
               <li key={i} className="flex gap-4">
                 <div className="w-16 shrink-0 pt-0.5 text-right">
                   <span className="font-mono text-xs text-muted-foreground">

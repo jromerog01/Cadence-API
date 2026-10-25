@@ -65,6 +65,7 @@ def _job_from_row(row: JobRow, segments: list[Segment] | None = None) -> Job:
         diarize=row.diarize,
         duration_seconds=float(row.duration_seconds) if row.duration_seconds is not None else None,
         error_message=row.error_message,
+        word_count=row.word_count,
         created_at=row.created_at,
         started_at=row.started_at,
         finished_at=row.finished_at,

@@ -16,6 +16,8 @@ export type Transcription = {
   words: number
   status: 'listo' | 'procesando' | 'error'
   errorMessage?: string | null
+  progress: number
+  stage: string | null
   segments: TranscriptSegment[]
 }
 
@@ -34,10 +36,12 @@ function statusOf(job: Job): Transcription['status'] {
 }
 
 export function toViewModel(job: Job): Transcription {
-  const words = job.segments.reduce(
-    (count, s) => count + s.text.split(/\s+/).filter(Boolean).length,
-    0,
-  )
+  // The jobs list endpoint doesn't include segments (too expensive to load
+  // for every row), so word_count comes from the backend; the segments
+  // fallback only kicks in on the job detail view, which does include them.
+  const words =
+    job.word_count ??
+    job.segments.reduce((count, s) => count + s.text.split(/\s+/).filter(Boolean).length, 0)
   return {
     id: job.id,
     title: job.original_filename.replace(/\.[^/.]+$/, ''),
@@ -48,6 +52,8 @@ export function toViewModel(job: Job): Transcription {
     words,
     status: statusOf(job),
     errorMessage: job.error_message,
+    progress: job.progress,
+    stage: job.stage,
     segments: job.segments.map((s) => ({
       start: formatDuration(s.start_seconds),
       speaker: s.speaker ?? '',

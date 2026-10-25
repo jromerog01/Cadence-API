@@ -19,6 +19,7 @@ export const JobSchema = z.object({
   progress: z.number(),
   stage: z.enum(['normalizing', 'transcribing', 'diarizing']).nullable(),
   error_message: z.string().nullable(),
+  word_count: z.number().nullable(),
   created_at: z.string(),
   segments: z.array(SegmentSchema).default([]),
 })

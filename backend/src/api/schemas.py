@@ -34,6 +34,7 @@ class JobOut(BaseModel):
     progress: float
     stage: str | None
     error_message: str | None
+    word_count: int | None
     created_at: datetime
     segments: list[SegmentOut] = []
 
@@ -50,6 +51,7 @@ class JobOut(BaseModel):
             progress=job.progress,
             stage=job.stage,
             error_message=job.error_message,
+            word_count=job.word_count,
             created_at=job.created_at,
             segments=[SegmentOut.from_domain(s) for s in job.segments],
         )

@@ -47,6 +47,7 @@ class Job:
     diarize: bool = False
     duration_seconds: float | None = None
     error_message: str | None = None
+    word_count: int | None = None
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None

@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cadence}
       POSTGRES_USER: ${POSTGRES_USER:-cadence}
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -29,6 +31,7 @@ services:
     build:
       context: ./backend
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
       REDIS_URL: redis://redis:6379/0
@@ -57,6 +60,7 @@ services:
     build:
       context: ./backend
     command: ["python", "-m", "worker.run"]
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cadence}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-cadence}
       REDIS_URL: redis://redis:6379/0
@@ -79,6 +83,7 @@ services:
     build:
       context: .
       dockerfile: Caddyfile.Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:

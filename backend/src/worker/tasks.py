@@ -39,13 +39,15 @@ def _consume_segments(
     job_id: UUID,
     segments: Iterator[Segment],
     duration_seconds: float,
-) -> None:
+) -> int:
     # segments is faster-whisper's lazy generator: the actual transcription
     # work happens as this loop advances, which is why it must run while the
     # normalized audio file (and its temp directory) still exists.
     batch: list[Segment] = []
+    word_count = 0
     for seg in segments:
         batch.append(seg)
+        word_count += len(seg.text.split())
         if len(batch) >= BATCH_SIZE:
             repo.insert_segments(job_id, batch)
             if duration_seconds:
@@ -54,6 +56,7 @@ def _consume_segments(
             batch = []
     if batch:
         repo.insert_segments(job_id, batch)
+    return word_count
 
 
 def transcribe_job(job_id: str) -> None:
@@ -80,7 +83,7 @@ def transcribe_job(job_id: str) -> None:
             engine = _get_engine(job.model)
             info, segments = engine.transcribe(normalized_path, language=job.language)
             repo.update_job(job.id, duration_seconds=info.duration_seconds)
-            _consume_segments(repo, job.id, segments, info.duration_seconds)
+            word_count = _consume_segments(repo, job.id, segments, info.duration_seconds)
 
             repo.update_job(
                 job.id,
@@ -88,11 +91,16 @@ def transcribe_job(job_id: str) -> None:
                 stage=None,
                 progress=1.0,
                 detected_language=info.detected_language,
+                word_count=word_count,
                 finished_at=_utcnow(),
             )
             logger.info("job done", extra={"job_id": job_id})
     except Exception as exc:
         logger.exception("job failed", extra={"job_id": job_id})
+        # The exception may have left the transaction aborted (e.g. a failed
+        # insert), which would make this same update_job call fail too and
+        # leave the job stuck in "processing" forever.
+        session.rollback()
         repo.update_job(job.id, status="error", error_message=str(exc), finished_at=_utcnow())
         raise
     finally:

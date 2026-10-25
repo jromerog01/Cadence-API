@@ -71,7 +71,7 @@ export function ExportMenu({ transcription }: { transcription: Transcription }) 
         </div>
       )}
       {error && (
-        <p className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-destructive">
+        <p className="absolute right-0 top-full z-20 mt-1 w-44 text-right text-xs text-destructive">
           No se pudo exportar. Intenta de nuevo.
         </p>
       )}
