@@ -10,7 +10,7 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if state.user == nil {
+            if state.user == nil && !state.localOnly {
                 LoginView(state: state)
             } else {
                 TabView {
@@ -66,6 +66,9 @@ private struct LoginView: View {
                     Task { await state.login(email: email, password: password) }
                 }
                 .disabled(state.isBusy || email.isEmpty || password.isEmpty || state.server.isEmpty)
+                if state.localEngineAvailable {
+                    Button("Usar solo en este iPhone") { Task { await state.useLocalMode() } }
+                }
             }
             .navigationTitle("Cadence")
             .overlay { if state.isBusy { ProgressView() } }
@@ -107,7 +110,8 @@ private struct LibraryView: View {
                             }
                         }
                         .onDelete { offsets in
-                            for index in offsets { Task { await state.delete(filtered[index].id) } }
+                            let ids = offsets.map { filtered[$0].id }
+                            for id in ids { Task { await state.delete(id) } }
                         }
                     }
                 }
@@ -141,6 +145,7 @@ private struct NewJobView: View {
     let file: URL
     @State private var model = "small"
     @State private var language = ""
+    @State private var engine = "server"
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -148,33 +153,52 @@ private struct NewJobView: View {
             Form {
                 Section("Audio") { Text(state.pendingInboxItem?.filename ?? file.lastPathComponent) }
                 Section("Transcripción") {
-                    Picker("Modelo", selection: $model) {
+                    if state.localEngineAvailable {
+                        Picker("Motor", selection: $engine) {
+                            if !state.localOnly { Text("Servidor").tag("server") }
+                            Text("En este iPhone").tag("device")
+                        }
+                    }
+                    if engine == "server" { Picker("Modelo", selection: $model) {
                         ForEach(state.models, id: \.name) { item in
                             Text(item.name).tag(item.name)
                         }
-                    }
-                    TextField("Idioma (vacío = automático)", text: $language)
+                    } }
+                    TextField(engine == "device" ? "Idioma obligatorio (es, en…)" : "Idioma (vacío = automático)", text: $language)
                         .textInputAutocapitalization(.never)
+                    if engine == "device" {
+                        Text("El audio permanece en este iPhone. La primera vez debes descargar el modelo del idioma.").font(.footnote)
+                        Button("Descargar modelo del idioma") { Task { await state.downloadLocalModel(language: language) } }
+                            .disabled(language.isEmpty || state.isBusy)
+                        if state.isBusy { ProgressView("Descargando modelo…") }
+                    }
                 }
                 if let progress = state.uploadProgress {
                     Section("Subiendo") { ProgressView(value: progress) }
                 }
-                Button("Transcribir en servidor") {
+                Button(engine == "device" ? "Transcribir en este iPhone" : "Transcribir en servidor") {
                     Task {
-                        await state.upload(file: file, filename: state.pendingInboxItem?.filename,
-                                           model: model, language: language)
+                        if engine == "device" {
+                            let filename = state.pendingInboxItem?.filename ?? file.lastPathComponent
+                            state.importedAudio = nil
+                            dismiss()
+                            await state.transcribeLocally(file: file, filename: filename, language: language)
+                            return
+                        }
+                        await state.upload(file: file, filename: state.pendingInboxItem?.filename, model: model, language: language)
                         if state.uploadProgress == nil && state.errorMessage == nil {
                             state.importedAudio = nil
                             dismiss()
                         }
                     }
                 }
-                .disabled(state.uploadProgress != nil)
+                .disabled(state.uploadProgress != nil || state.isBusy || (engine == "device" && (language.isEmpty || state.activeLocalID != nil)))
             }
             .navigationTitle("Nuevo trabajo")
             .toolbar { Button("Cancelar") { state.importedAudio = nil; dismiss() } }
             .task {
-                await state.loadModels()
+                if state.localOnly { engine = "device"; language = "es" }
+                else { await state.loadModels() }
                 if let pending = state.pendingInboxItem {
                     model = pending.model
                     language = pending.language ?? ""
@@ -204,6 +228,13 @@ private struct JobDetailView: View {
                         }
                         if job.status != "done" { ProgressView(value: state.liveProgress[job.id] ?? job.progress) }
                         if let error = job.errorMessage { Text(error).foregroundStyle(.red) }
+                        if state.localRecords[id] != nil {
+                            Text("En este iPhone").foregroundStyle(.secondary)
+                            if job.status == "paused" {
+                                Button("Continuar transcripción") { Task { await state.resumeLocal(id); await load() } }
+                                    .disabled(state.activeLocalID != nil)
+                            }
+                        }
                     }
                     Section("Transcripción") {
                         ForEach(job.segments, id: \.idx) { segment in
@@ -258,6 +289,7 @@ private struct JobDetailView: View {
             if let file = previewFile { PDFPreview(file: file) }
         }
         .task { await load() }
+        .onChange(of: state.localRecords[id]?.job) { _, value in if let value { job = value } }
         .refreshable { await load() }
     }
 
