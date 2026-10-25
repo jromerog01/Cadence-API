@@ -238,6 +238,15 @@ import UserNotifications
         } catch { handle(error) }
     }
 
+    func purgeLocalAudio(_ id: String) async {
+        guard var record = localRecords[id], let path = record.audioPath else { return }
+        try? FileManager.default.removeItem(atPath: path)
+        record.audioPath = nil
+        try? await localStore.save(record)
+        localRecords[id] = record
+        await refresh()
+    }
+
     func stopWatching() {
         for task in watchers.values { task.cancel() }
         watchers.removeAll()

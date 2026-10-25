@@ -222,6 +222,13 @@ private struct JobDetailView: View {
     @State private var job: Job?
     @State private var exportedFile: URL?
     @State private var previewFile: URL?
+    @State private var player = AudioPlaybackController()
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let min = Int(seconds) / 60
+        let sec = Int(seconds) % 60
+        return String(format: "%d:%02d", min, sec)
+    }
 
     var body: some View {
         Group {
@@ -247,14 +254,56 @@ private struct JobDetailView: View {
                             }
                         }
                     }
+                    if let audioPath = state.localRecords[id]?.audioPath,
+                       FileManager.default.fileExists(atPath: audioPath) {
+                        Section("Audio") {
+                            HStack(spacing: 16) {
+                                Button {
+                                    player.togglePlayPause()
+                                } label: {
+                                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                        .font(.system(size: 32))
+                                }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(formatDuration(player.currentTime))
+                                            .font(.caption.monospacedDigit())
+                                        Spacer()
+                                        Text(formatDuration(player.duration))
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    ProgressView(value: player.duration > 0 ? player.currentTime / player.duration : 0)
+                                }
+                            }
+                            Button("Liberar almacenamiento de audio", role: .destructive) {
+                                player.stop()
+                                Task { await state.purgeLocalAudio(id); await load() }
+                            }
+                            .font(.caption)
+                        }
+                    }
                     Section("Transcripción") {
                         ForEach(job.segments, id: \.idx) { segment in
+                            let isCurrent = player.isPlaying && player.currentTime >= segment.startSeconds && player.currentTime < segment.endSeconds
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(String(format: "%.1f s", segment.startSeconds))
                                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                Text(segment.text).textSelection(.enabled)
+                                Text(segment.text)
+                                    .fontWeight(isCurrent ? .semibold : .regular)
+                                    .textSelection(.enabled)
                             }
                             .padding(.vertical, 4)
+                            .padding(.horizontal, isCurrent ? 8 : 0)
+                            .background(isCurrent ? Color.accentColor.opacity(0.12) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if state.localRecords[id]?.audioPath != nil {
+                                    player.seek(to: segment.startSeconds)
+                                    if !player.isPlaying { player.play() }
+                                }
+                            }
                         }
                     }
                 }
@@ -299,7 +348,15 @@ private struct JobDetailView: View {
         )) {
             if let file = previewFile { PDFPreview(file: file) }
         }
-        .task { await load() }
+        .task {
+            await load()
+            if let path = state.localRecords[id]?.audioPath, FileManager.default.fileExists(atPath: path) {
+                player.load(url: URL(fileURLWithPath: path))
+            }
+        }
+        .onDisappear {
+            player.stop()
+        }
         .onChange(of: state.localRecords[id]?.job) { _, value in if let value { job = value } }
         .refreshable { await load() }
     }
