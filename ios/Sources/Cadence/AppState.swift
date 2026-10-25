@@ -75,15 +75,17 @@ import UserNotifications
         if localOnly { jobs = localRecords.values.map(\.job).sorted { $0.createdAt > $1.createdAt }; return }
         do {
             let remote: [Job] = try await client().request("api/jobs")
+            // Primero se muestra la lista que respondió el servidor; el caché es solo un extra.
+            jobs = (remote + localRecords.values.map(\.job)).sorted { $0.createdAt > $1.createdAt }
             if let serverCache {
                 for var job in remote {
-                    if job.segments.isEmpty, let saved = try await serverCache.load(job.id) {
+                    // Si el caché falla (archivo dañado, disco lleno), no debe tirar la lista del servidor.
+                    if job.segments.isEmpty, let saved = try? await serverCache.load(job.id) {
                         job.segments = saved.job.segments
                     }
-                    try await serverCache.save(StoredJob(job: job, origin: .server))
+                    try? await serverCache.save(StoredJob(job: job, origin: .server))
                 }
             }
-            jobs = (remote + localRecords.values.map(\.job)).sorted { $0.createdAt > $1.createdAt }
             let activeServerIDs = remote.filter { $0.status == "queued" || $0.status == "processing" }.map(\.id)
             UserDefaults.standard.set(activeServerIDs, forKey: "activeServerJobIDs")
             ServerRefreshWatcher.shared.scheduleNext(hasActiveJobs: !activeServerIDs.isEmpty)
@@ -121,6 +123,13 @@ import UserNotifications
         UserDefaults.standard.set(true, forKey: "localOnly")
         stopWatching()
         await refresh()
+    }
+
+    func connectToServer() {
+        // Sale del modo "solo este iPhone": como user es nil, ContentView muestra el login.
+        stopWatching()
+        localOnly = false
+        UserDefaults.standard.set(false, forKey: "localOnly")
     }
 
     func downloadLocalModel(language: String) async {

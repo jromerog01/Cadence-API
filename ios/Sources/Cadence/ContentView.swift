@@ -92,7 +92,9 @@ private struct LibraryView: View {
         NavigationStack {
             Group {
                 if state.jobs.isEmpty {
-                    ContentUnavailableView("Sin transcripciones", systemImage: "waveform", description: Text("Tus trabajos aparecerán aquí."))
+                    ContentUnavailableView("Sin transcripciones", systemImage: "waveform", description: Text(
+                        state.user.map { "El servidor no devolvió trabajos para \($0.email). Desliza hacia abajo para actualizar." }
+                            ?? "Tus trabajos aparecerán aquí."))
                 } else {
                     List {
                         ForEach(filtered) { job in
@@ -384,6 +386,9 @@ private struct SettingsView: View {
                         LabeledContent("Correo", value: user.email)
                     }
                     LabeledContent("Servidor", value: state.server)
+                    if state.user == nil {
+                        Button("Conectar a un servidor") { state.connectToServer() }
+                    }
                 }
                 Section("Transcripción local") {
                     Toggle("Sincronizar automáticamente", isOn: $state.autoSyncLocal)
