@@ -51,7 +51,11 @@ def get_current_user(
     request: Request,
     user_repo: PostgresUserRepository = Depends(get_user_repo),
 ) -> User:
-    token = request.cookies.get(COOKIE_NAME)
+    authorization = request.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    else:
+        token = request.cookies.get(COOKIE_NAME)
     user_id = decode_session_token(token) if token else None
     user = user_repo.get_by_id(user_id) if user_id else None
     if user is None or not user.is_active:
