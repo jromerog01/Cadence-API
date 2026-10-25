@@ -13,6 +13,9 @@ dependencies = [
     "rq==2.12.0",
     "redis==5.2.1",
     "faster-whisper==1.2.1",
+    # faster-whisper declara av>=11 sin tope y llama av.open(metadata_errors=...),
+    # argumento que av 19 ya no acepta. Fijado a una versión que sí lo tiene.
+    "av==16.0.0",
     "weasyprint==69.0",
     "argon2-cffi==25.1.0",
     "pyjwt==2.13.0",
