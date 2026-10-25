@@ -100,6 +100,9 @@ private struct LibraryView: View {
                                     Text(job.originalFilename).font(.headline)
                                     HStack {
                                         Text(job.status == "done" ? "Lista" : job.status == "error" ? "Error" : "En proceso")
+                                        if let local = state.localRecords[job.id] {
+                                            Text(local.serverId != nil ? "En este iPhone · sincronizado" : "En este iPhone")
+                                        }
                                         Text(job.createdAt, style: .date)
                                     }
                                     .font(.caption).foregroundStyle(.secondary)
@@ -228,11 +231,15 @@ private struct JobDetailView: View {
                         }
                         if job.status != "done" { ProgressView(value: state.liveProgress[job.id] ?? job.progress) }
                         if let error = job.errorMessage { Text(error).foregroundStyle(.red) }
-                        if state.localRecords[id] != nil {
-                            Text("En este iPhone").foregroundStyle(.secondary)
+                        if let local = state.localRecords[id] {
+                            Text(local.serverId != nil ? "En este iPhone · sincronizado" : "En este iPhone").foregroundStyle(.secondary)
                             if job.status == "paused" {
                                 Button("Continuar transcripción") { Task { await state.resumeLocal(id); await load() } }
                                     .disabled(state.activeLocalID != nil)
+                            }
+                            if job.status == "done", local.serverId == nil, state.token != nil {
+                                Button("Subir texto al servidor") { Task { await state.syncLocal(id); await load() } }
+                                    .disabled(state.isBusy)
                             }
                         }
                     }
@@ -316,6 +323,13 @@ private struct SettingsView: View {
                         LabeledContent("Correo", value: user.email)
                     }
                     LabeledContent("Servidor", value: state.server)
+                }
+                Section("Transcripción local") {
+                    Toggle("Sincronizar automáticamente", isOn: $state.autoSyncLocal)
+                    Button("Descargar modelo de español") {
+                        Task { await state.downloadLocalModel(language: "es") }
+                    }
+                    .disabled(state.isBusy || !state.localEngineAvailable)
                 }
                 Button("Cerrar sesión", role: .destructive) { state.logout() }
             }

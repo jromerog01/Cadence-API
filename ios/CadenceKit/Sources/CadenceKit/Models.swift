@@ -52,6 +52,30 @@ public struct Job: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+public struct ImportJobPayload: Codable, Sendable, Equatable {
+    public let originalFilename: String
+    public let durationSeconds: Double?
+    public let language: String?
+    public let model: String
+    public let segments: [Segment]
+
+    public init(originalFilename: String, durationSeconds: Double? = nil, language: String? = nil, model: String = "apple-speech", segments: [Segment] = []) {
+        self.originalFilename = originalFilename
+        self.durationSeconds = durationSeconds
+        self.language = language
+        self.model = model
+        self.segments = segments
+    }
+
+    public init(job: Job) {
+        self.originalFilename = job.originalFilename
+        self.durationSeconds = job.durationSeconds
+        self.language = job.language ?? job.detectedLanguage
+        self.model = job.model
+        self.segments = job.segments
+    }
+}
+
 public enum APIJSON {
     public static func decoder() -> JSONDecoder {
         let decoder = JSONDecoder()

@@ -20,4 +20,14 @@ import Testing
     #expect(user.displayName == "Ana")
     let model = try APIJSON.decoder().decode(ModelInfo.self, from: Data(#"{"name":"small","ram_gb":2.0,"speed_factor":0.5,"role":"balanced"}"#.utf8))
     #expect(model.ramGb == 2)
+
+    let payload = ImportJobPayload(job: job)
+    let encoded = try APIJSON.encoder().encode(payload)
+    let dict = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    #expect(dict?["original_filename"] as? String == "reunión.m4a")
+    #expect(dict?["duration_seconds"] as? Double == 63.25)
+    #expect(dict?["model"] as? String == "small")
+    let segments = dict?["segments"] as? [[String: Any]]
+    #expect(segments?.first?["start_seconds"] as? Double == 0.0)
+    #expect(segments?.first?["end_seconds"] as? Double == 1.5)
 }

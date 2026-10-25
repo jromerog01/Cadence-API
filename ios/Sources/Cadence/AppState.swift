@@ -17,6 +17,9 @@ import UserNotifications
     var importedAudio: URL?
     var pendingInboxItem: InboxItem?
     var localOnly = UserDefaults.standard.bool(forKey: "localOnly")
+    var autoSyncLocal = UserDefaults.standard.bool(forKey: "autoSyncLocal") {
+        didSet { UserDefaults.standard.set(autoSyncLocal, forKey: "autoSyncLocal") }
+    }
     var localRecords: [String: StoredJob] = [:]
     var activeLocalID: String?
     var localEngineAvailable: Bool { SpeechTranscriber.isAvailable }
@@ -187,6 +190,9 @@ import UserNotifications
                     content.body = job.originalFilename
                     content.userInfo = ["job_id": job.id]
                     try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: job.id, content: content, trigger: nil))
+                    if autoSyncLocal, token != nil {
+                        Task { await syncLocal(job.id) }
+                    }
                 }
                 localRecords[record.job.id] = record
                 if let index = jobs.firstIndex(where: { $0.id == record.job.id }) { jobs[index] = record.job }
@@ -205,6 +211,28 @@ import UserNotifications
         guard let record = localRecords[id], let audio = record.audioPath else { return }
         await startLocal(file: URL(fileURLWithPath: audio), filename: record.job.originalFilename,
                                 language: record.job.language ?? "es", resumeID: id)
+    }
+
+    func syncLocal(_ id: String) async {
+        guard let record = localRecords[id], record.serverId == nil, record.job.status == "done" else { return }
+        guard token != nil else {
+            errorMessage = "Inicia sesión en un servidor para sincronizar tus transcripciones."
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let client = try client()
+            let payload = ImportJobPayload(job: record.job)
+            let body = try APIJSON.encoder().encode(payload)
+            let serverJob: Job = try await client.request("api/jobs/import", method: "POST", body: body)
+            var updated = record
+            updated.serverId = serverJob.id
+            try await localStore.save(updated)
+            localRecords[id] = updated
+            try await serverCache?.save(StoredJob(job: serverJob, origin: .server))
+            await refresh()
+        } catch { handle(error) }
     }
 
     func stopWatching() {

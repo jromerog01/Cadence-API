@@ -43,7 +43,7 @@ struct AppleSpeechEngine: TranscriptionEngine {
                     let reader = try AudioReader(url: request.fileURL, sampleRate: format.sampleRate,
                                                  channels: format.channelCount, commonFormat: format.commonFormat,
                                                  interleaved: format.isInterleaved, offset: request.resumeSeconds)
-                    let duration = await reader.duration
+                    let duration = reader.duration
                     let analyzer = SpeechAnalyzer(modules: [module])
                     let results = Task {
                         var segments = request.existingSegments
@@ -100,7 +100,7 @@ private actor AudioReader {
     private let target: AVAudioFormat
     private var outputFrames: Int64 = 0
     private var drained = false
-    let duration: Double
+    nonisolated let duration: Double
 
     init(url: URL, sampleRate: Double, channels: AVAudioChannelCount, commonFormat: AVAudioCommonFormat,
          interleaved: Bool, offset: Double) throws {
