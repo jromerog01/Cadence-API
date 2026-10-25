@@ -80,6 +80,7 @@ private struct LibraryView: View {
     @Bindable var state: AppState
     @State private var search = ""
     @State private var showImporter = false
+    @State private var showRecorder = false
 
     private var filtered: [Job] {
         search.isEmpty ? state.jobs : state.jobs.filter {
@@ -125,13 +126,16 @@ private struct LibraryView: View {
             .refreshable { await state.refresh() }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("Actualizar", systemImage: "arrow.clockwise") { Task { await state.refresh() } }
+                    Button("Grabar", systemImage: "mic.fill") { showRecorder = true }
                     Button("Elegir audio", systemImage: "plus") { showImporter = true }
                 }
             }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .movie]) { result in
                 do { state.receiveAudio(try result.get()) }
                 catch { state.errorMessage = error.localizedDescription }
+            }
+            .sheet(isPresented: $showRecorder) {
+                RecorderView(state: state)
             }
             .sheet(isPresented: Binding(
                 get: { state.importedAudio != nil },
@@ -334,6 +338,98 @@ private struct SettingsView: View {
                 Button("Cerrar sesión", role: .destructive) { state.logout() }
             }
             .navigationTitle("Ajustes")
+        }
+    }
+}
+
+private struct RecorderView: View {
+    @Bindable var state: AppState
+    @State private var recorder = AudioRecorder()
+    @Environment(\.dismiss) private var dismiss
+
+    private var formattedTime: String {
+        let minutes = Int(recorder.elapsedTime) / 60
+        let seconds = Int(recorder.elapsedTime) % 60
+        let tenths = Int((recorder.elapsedTime.truncatingRemainder(dividingBy: 1)) * 10)
+        return String(format: "%02d:%02d.%d", minutes, seconds, tenths)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 32) {
+                Spacer()
+
+                VStack(spacing: 12) {
+                    Image(systemName: recorder.isRecording && !recorder.isPaused ? "waveform" : "mic.circle.fill")
+                        .font(.system(size: 64))
+                        .foregroundStyle(recorder.isRecording ? .red : .accentColor)
+                        .symbolEffect(.variableColor.iterative, isActive: recorder.isRecording && !recorder.isPaused)
+
+                    Text(formattedTime)
+                        .font(.system(size: 48, weight: .light, design: .monospaced))
+                        .monospacedDigit()
+
+                    if recorder.isRecording {
+                        ProgressView(value: Double(recorder.audioLevel))
+                            .tint(.red)
+                            .padding(.horizontal, 48)
+                    }
+                }
+
+                if let error = recorder.errorMessage {
+                    Text(error).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center).padding()
+                }
+
+                Spacer()
+
+                HStack(spacing: 24) {
+                    if recorder.isRecording {
+                        Button {
+                            if recorder.isPaused { recorder.resume() }
+                            else { recorder.pause() }
+                        } label: {
+                            Label(recorder.isPaused ? "Continuar" : "Pausar",
+                                  systemImage: recorder.isPaused ? "play.fill" : "pause.fill")
+                                .frame(minWidth: 100)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            if let url = recorder.stop() {
+                                dismiss()
+                                state.importedAudio = url
+                            }
+                        } label: {
+                            Label("Listo", systemImage: "checkmark.circle.fill")
+                                .frame(minWidth: 100)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    } else {
+                        Button {
+                            Task { await recorder.start() }
+                        } label: {
+                            Label("Grabar", systemImage: "circle.fill")
+                                .font(.headline)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .navigationTitle("Grabar audio")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") {
+                        recorder.cancel()
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
