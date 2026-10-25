@@ -9,6 +9,9 @@ import Observation
     var jobs: [Job] = []
     var isBusy = false
     var errorMessage: String?
+    var uploadProgress: Double?
+    var models: [ModelInfo] = []
+    var importedAudio: URL?
 
     func restore() async {
         guard token != nil else { return }
@@ -38,6 +41,59 @@ import Observation
     func refresh() async {
         do { jobs = try await client().request("api/jobs") }
         catch { handle(error) }
+    }
+
+    func loadModels() async {
+        do { models = try await client().request("api/models") }
+        catch { handle(error) }
+    }
+
+    func receiveAudio(_ source: URL) {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        do {
+            let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appending(path: "ImportedAudio/\(UUID().uuidString)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let destination = root.appending(path: source.lastPathComponent)
+            try FileManager.default.copyItem(at: source, to: destination)
+            importedAudio = destination
+        } catch { handle(error) }
+    }
+
+    func upload(file: URL, model: String, language: String?) async {
+        uploadProgress = 0
+        defer { uploadProgress = nil }
+        do {
+            let client = try client()
+            let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size > 0 && size <= 500 * 1024 * 1024 else {
+                throw APIError.server(413, "El archivo debe medir entre 1 byte y 500 MB")
+            }
+            let initBody = try APIJSON.encoder().encode(InitUploadRequest(
+                filename: file.lastPathComponent, sizeBytes: size, model: model,
+                language: language?.isEmpty == true ? nil : language
+            ))
+            let session: InitUploadResponse = try await client.request("api/uploads", method: "POST", body: initBody)
+            let plan = try UploadPlan(sizeBytes: Int64(size), chunkSize: session.chunkSize)
+            let status: UploadStatusResponse = try await client.request("api/uploads/\(session.uploadId)")
+            let missing = plan.missingParts(received: status.received)
+            let input = try FileHandle(forReadingFrom: file)
+            defer { try? input.close() }
+            for part in missing {
+                let range = try plan.range(for: part)
+                try input.seek(toOffset: UInt64(range.lowerBound))
+                let data = try input.read(upToCount: Int(range.count)) ?? Data()
+                guard data.count == range.count else { throw APIError.server(0, "No se pudo leer el audio completo") }
+                let piece = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+                try data.write(to: piece, options: .atomic)
+                defer { try? FileManager.default.removeItem(at: piece) }
+                try await client.uploadPart("api/uploads/\(session.uploadId)/parts/\(part)", fileURL: piece)
+                uploadProgress = Double(range.upperBound) / Double(size)
+            }
+            let _: Job = try await client.request("api/uploads/\(session.uploadId)/complete", method: "POST")
+            await refresh()
+        } catch { handle(error) }
     }
 
     func job(_ id: String) async throws -> Job {
@@ -73,4 +129,11 @@ private struct Credentials: Encodable {
 
 private struct Health: Decodable {
     let status: String
+}
+
+private struct InitUploadRequest: Encodable {
+    let filename: String
+    let sizeBytes: Int
+    let model: String
+    let language: String?
 }

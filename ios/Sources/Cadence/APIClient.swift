@@ -6,6 +6,17 @@ struct TokenResponse: Decodable {
     let user: CadenceKit.User
 }
 
+struct InitUploadResponse: Decodable {
+    let uploadId: String
+    let chunkSize: Int64
+    let totalParts: Int
+}
+
+struct UploadStatusResponse: Decodable {
+    let totalParts: Int
+    let received: [Int]
+}
+
 enum APIError: LocalizedError {
     case invalidServer, unauthorized
     case server(Int, String)
@@ -58,5 +69,16 @@ struct APIClient: Sendable {
         guard let response = response as? HTTPURLResponse else { throw APIError.server(0, "Respuesta inválida") }
         if response.statusCode == 401 { throw APIError.unauthorized }
         guard (200..<300).contains(response.statusCode) else { throw APIError.server(response.statusCode, "No se pudo borrar") }
+    }
+
+    func uploadPart(_ path: String, fileURL: URL) async throws {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = "PUT"
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (_, response) = try await URLSession.shared.upload(for: request, fromFile: fileURL)
+        guard let response = response as? HTTPURLResponse else { throw APIError.server(0, "Respuesta inválida") }
+        if response.statusCode == 401 { throw APIError.unauthorized }
+        guard (200..<300).contains(response.statusCode) else { throw APIError.server(response.statusCode, "No se pudo subir una parte") }
     }
 }

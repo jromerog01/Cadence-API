@@ -1,5 +1,6 @@
 import CadenceKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var state = AppState()
@@ -18,6 +19,7 @@ struct ContentView: View {
             }
         }
         .task { await state.restore() }
+        .onOpenURL { state.receiveAudio($0) }
         .alert("Cadence", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -64,6 +66,7 @@ private struct LoginView: View {
 private struct LibraryView: View {
     @Bindable var state: AppState
     @State private var search = ""
+    @State private var showImporter = false
 
     private var filtered: [Job] {
         search.isEmpty ? state.jobs : state.jobs.filter {
@@ -103,7 +106,66 @@ private struct LibraryView: View {
             .navigationDestination(for: String.self) { JobDetailView(state: state, id: $0) }
             .searchable(text: $search)
             .refreshable { await state.refresh() }
-            .toolbar { Button("Actualizar", systemImage: "arrow.clockwise") { Task { await state.refresh() } } }
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Actualizar", systemImage: "arrow.clockwise") { Task { await state.refresh() } }
+                    Button("Elegir audio", systemImage: "plus") { showImporter = true }
+                }
+            }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .movie]) { result in
+                do { state.receiveAudio(try result.get()) }
+                catch { state.errorMessage = error.localizedDescription }
+            }
+            .sheet(isPresented: Binding(
+                get: { state.importedAudio != nil },
+                set: { if !$0 { state.importedAudio = nil } }
+            )) {
+                if let file = state.importedAudio { NewJobView(state: state, file: file) }
+            }
+        }
+    }
+}
+
+private struct NewJobView: View {
+    @Bindable var state: AppState
+    let file: URL
+    @State private var model = "small"
+    @State private var language = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Audio") { Text(file.lastPathComponent) }
+                Section("Transcripción") {
+                    Picker("Modelo", selection: $model) {
+                        ForEach(state.models, id: \.name) { item in
+                            Text(item.name).tag(item.name)
+                        }
+                    }
+                    TextField("Idioma (vacío = automático)", text: $language)
+                        .textInputAutocapitalization(.never)
+                }
+                if let progress = state.uploadProgress {
+                    Section("Subiendo") { ProgressView(value: progress) }
+                }
+                Button("Transcribir en servidor") {
+                    Task {
+                        await state.upload(file: file, model: model, language: language)
+                        if state.uploadProgress == nil && state.errorMessage == nil {
+                            state.importedAudio = nil
+                            dismiss()
+                        }
+                    }
+                }
+                .disabled(state.uploadProgress != nil)
+            }
+            .navigationTitle("Nuevo trabajo")
+            .toolbar { Button("Cancelar") { state.importedAudio = nil; dismiss() } }
+            .task {
+                await state.loadModels()
+                if !state.models.contains(where: { $0.name == model }) { model = state.models.first?.name ?? model }
+            }
         }
     }
 }
