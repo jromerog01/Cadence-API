@@ -63,7 +63,7 @@ def transcribe_job(job_id: str) -> None:
     session = new_session()
     repo = PostgresJobRepository(session)
     job = repo.get_job(UUID(job_id))
-    if job is None:
+    if job is None or not job.stored_path:
         session.close()
         return
 

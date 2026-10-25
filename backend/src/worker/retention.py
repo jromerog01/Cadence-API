@@ -32,6 +32,8 @@ def purge_old_audio(retention_days: int) -> int:
     try:
         repo = PostgresJobRepository(session)
         for job in repo.list_finished_jobs_before(cutoff):
+            if not job.stored_path:
+                continue
             path = Path(job.stored_path)
             if path.exists():
                 path.unlink()

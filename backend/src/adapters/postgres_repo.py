@@ -84,6 +84,23 @@ class PostgresJobRepository:
         self._session.refresh(row)
         return _job_from_row(row)
 
+    def import_completed_job(self, segments: list[Segment], **fields) -> Job:
+        row = JobRow(**fields)
+        try:
+            self._session.add(row)
+            self._session.flush()
+            self._session.add_all([
+                SegmentRow(job_id=row.id, idx=s.idx, start_seconds=s.start_seconds,
+                           end_seconds=s.end_seconds, text=s.text, speaker=s.speaker)
+                for s in segments
+            ])
+            self._session.commit()
+            self._session.refresh(row)
+        except Exception:
+            self._session.rollback()
+            raise
+        return _job_from_row(row, segments)
+
     def get_job(self, job_id: UUID, *, include_segments: bool = True) -> Job | None:
         row = self._session.get(JobRow, job_id)
         if row is None:

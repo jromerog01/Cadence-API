@@ -23,9 +23,9 @@ from api.job_creation import (
     finalize_job,
     storage_dir,
 )
-from api.schemas import JobOut
+from api.schemas import ImportJobIn, JobOut
 from domain.exporters import TEXT_EXPORTERS
-from domain.models import User
+from domain.models import Segment, User
 
 ExportFormat = Literal["txt", "md", "json", "srt", "vtt", "pdf"]
 
@@ -106,6 +106,24 @@ def list_jobs(
     return [JobOut.from_domain(j) for j in jobs]
 
 
+@router.post("/import", status_code=201, response_model=JobOut)
+def import_job(
+    payload: ImportJobIn,
+    current_user: User = Depends(get_current_user),
+    repo: PostgresJobRepository = Depends(get_repo),
+):
+    segments = [Segment(**segment.model_dump()) for segment in payload.segments]
+    job = repo.import_completed_job(
+        segments=segments, id=uuid4(), owner_id=current_user.id,
+        original_filename=payload.original_filename, stored_path=None, mime_type=None,
+        size_bytes=None, duration_seconds=payload.duration_seconds, model=payload.model,
+        language=payload.language, detected_language=payload.language, status="done",
+        progress=1.0, stage=None, word_count=sum(len(s.text.split()) for s in segments),
+        finished_at=datetime.now(timezone.utc),
+    )
+    return JobOut.from_domain(job)
+
+
 @router.get("/{job_id}", response_model=JobOut)
 def get_job(
     job_id: UUID,
@@ -134,7 +152,8 @@ def delete_job(
     except Exception:
         pass  # already started, already finished, or never queued — fine either way
 
-    Path(job.stored_path).unlink(missing_ok=True)
+    if job.stored_path:
+        Path(job.stored_path).unlink(missing_ok=True)
     repo.delete_job(job_id)
 
 

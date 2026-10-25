@@ -35,9 +35,9 @@ class Job:
     id: UUID
     owner_id: UUID
     original_filename: str
-    stored_path: str
+    stored_path: str | None
     mime_type: str | None
-    size_bytes: int
+    size_bytes: int | None
     model: str
     status: str = "queued"
     progress: float = 0.0
