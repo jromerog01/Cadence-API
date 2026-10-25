@@ -84,6 +84,9 @@ import UserNotifications
                 }
             }
             jobs = (remote + localRecords.values.map(\.job)).sorted { $0.createdAt > $1.createdAt }
+            let activeServerIDs = remote.filter { $0.status == "queued" || $0.status == "processing" }.map(\.id)
+            UserDefaults.standard.set(activeServerIDs, forKey: "activeServerJobIDs")
+            ServerRefreshWatcher.shared.scheduleNext(hasActiveJobs: !activeServerIDs.isEmpty)
             startWatching()
         }
         catch {
