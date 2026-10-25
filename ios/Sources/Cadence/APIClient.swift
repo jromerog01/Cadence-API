@@ -81,4 +81,26 @@ struct APIClient: Sendable {
         if response.statusCode == 401 { throw APIError.unauthorized }
         guard (200..<300).contains(response.statusCode) else { throw APIError.server(response.statusCode, "No se pudo subir una parte") }
     }
+
+    func events(_ path: String) -> AsyncThrowingStream<SSEMessage, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var request = URLRequest(url: baseURL.appending(path: path))
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    guard let response = response as? HTTPURLResponse else { throw APIError.server(0, "Respuesta inválida") }
+                    if response.statusCode == 401 { throw APIError.unauthorized }
+                    guard response.statusCode == 200 else { throw APIError.server(response.statusCode, "Error en el progreso") }
+                    var parser = SSEParser()
+                    for try await line in bytes.lines {
+                        for message in parser.feed(line + "\n") { continuation.yield(message) }
+                    }
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
 }

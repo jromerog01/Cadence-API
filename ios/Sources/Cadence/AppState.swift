@@ -12,6 +12,8 @@ import Observation
     var uploadProgress: Double?
     var models: [ModelInfo] = []
     var importedAudio: URL?
+    var liveProgress: [String: Double] = [:]
+    @ObservationIgnored private var watchers: [String: Task<Void, Never>] = [:]
 
     func restore() async {
         guard token != nil else { return }
@@ -39,8 +41,42 @@ import Observation
     }
 
     func refresh() async {
-        do { jobs = try await client().request("api/jobs") }
+        do {
+            jobs = try await client().request("api/jobs")
+            startWatching()
+        }
         catch { handle(error) }
+    }
+
+    func stopWatching() {
+        for task in watchers.values { task.cancel() }
+        watchers.removeAll()
+    }
+
+    private func startWatching() {
+        let active = Set(jobs.filter { $0.status == "queued" || $0.status == "processing" }.map(\.id))
+        for (id, task) in watchers where !active.contains(id) {
+            task.cancel()
+            watchers.removeValue(forKey: id)
+            liveProgress.removeValue(forKey: id)
+        }
+        for id in active where watchers[id] == nil {
+            watchers[id] = Task {
+                do {
+                    for try await event in try client().events("api/jobs/\(id)/events") {
+                        if event.event == "progress" {
+                            let payload = try APIJSON.decoder().decode(ProgressPayload.self, from: Data(event.data.utf8))
+                            liveProgress[id] = payload.progress
+                        } else if event.event == "done" || event.event == "error" {
+                            watchers.removeValue(forKey: id)
+                            await refresh()
+                            return
+                        }
+                    }
+                } catch { if !Task.isCancelled { handle(error) } }
+                watchers.removeValue(forKey: id)
+            }
+        }
     }
 
     func loadModels() async {
@@ -108,6 +144,7 @@ import Observation
     }
 
     func logout() {
+        stopWatching()
         SessionStore.clear()
         token = nil
         user = nil
@@ -136,4 +173,8 @@ private struct InitUploadRequest: Encodable {
     let sizeBytes: Int
     let model: String
     let language: String?
+}
+
+private struct ProgressPayload: Decodable {
+    let progress: Double
 }

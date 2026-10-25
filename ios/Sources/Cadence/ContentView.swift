@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var state = AppState()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -20,6 +21,10 @@ struct ContentView: View {
         }
         .task { await state.restore() }
         .onOpenURL { state.receiveAudio($0) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, state.token != nil { Task { await state.refresh() } }
+            else { state.stopWatching() }
+        }
         .alert("Cadence", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -91,7 +96,7 @@ private struct LibraryView: View {
                                     }
                                     .font(.caption).foregroundStyle(.secondary)
                                     if job.status == "processing" || job.status == "queued" {
-                                        ProgressView(value: job.progress)
+                                        ProgressView(value: state.liveProgress[job.id] ?? job.progress)
                                     }
                                 }
                             }
@@ -185,7 +190,7 @@ private struct JobDetailView: View {
                         if let language = job.detectedLanguage ?? job.language {
                             LabeledContent("Idioma", value: language)
                         }
-                        if job.status != "done" { ProgressView(value: job.progress) }
+                        if job.status != "done" { ProgressView(value: state.liveProgress[job.id] ?? job.progress) }
                         if let error = job.errorMessage { Text(error).foregroundStyle(.red) }
                     }
                     Section("Transcripción") {
