@@ -1,0 +1,30 @@
+{
+  "id": "7ea01d35-27f5-4d81-a33d-096b579ddaa7",
+  "original_filename": "reunión con Ana.m4a",
+  "duration_seconds": 63.25,
+  "model": "small",
+  "language": null,
+  "detected_language": "es",
+  "status": "done",
+  "progress": 1.0,
+  "stage": null,
+  "error_message": null,
+  "word_count": null,
+  "created_at": "2026-10-25T18:48:38.123456Z",
+  "segments": [
+    {
+      "idx": 0,
+      "start_seconds": 0.0,
+      "end_seconds": 1.5,
+      "text": "Hola, mundo.",
+      "speaker": null
+    },
+    {
+      "idx": 1,
+      "start_seconds": 1.5,
+      "end_seconds": 63.25,
+      "text": "Segunda frase: \"sí\".",
+      "speaker": "Ana"
+    }
+  ]
+}

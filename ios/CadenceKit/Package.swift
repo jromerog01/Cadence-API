@@ -7,6 +7,6 @@ let package = Package(
     products: [.library(name: "CadenceKit", targets: ["CadenceKit"])],
     targets: [
         .target(name: "CadenceKit"),
-        .testTarget(name: "CadenceKitTests", dependencies: ["CadenceKit"]),
+        .testTarget(name: "CadenceKitTests", dependencies: ["CadenceKit"], resources: [.copy("Fixtures")]),
     ]
 )

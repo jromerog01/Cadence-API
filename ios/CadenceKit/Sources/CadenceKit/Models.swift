@@ -19,22 +19,37 @@ public struct Segment: Codable, Sendable, Equatable {
     public let endSeconds: Double
     public let text: String
     public let speaker: String?
+    public init(idx: Int, startSeconds: Double, endSeconds: Double, text: String, speaker: String? = nil) {
+        self.idx = idx; self.startSeconds = startSeconds; self.endSeconds = endSeconds
+        self.text = text; self.speaker = speaker
+    }
 }
 
 public struct Job: Codable, Sendable, Equatable, Identifiable {
-    public let id: String
-    public let originalFilename: String
-    public let durationSeconds: Double?
-    public let model: String
-    public let language: String?
-    public let detectedLanguage: String?
-    public let status: String
-    public let progress: Double
-    public let stage: String?
-    public let errorMessage: String?
-    public let wordCount: Int?
-    public let createdAt: Date
-    public let segments: [Segment]
+    public var id: String
+    public var originalFilename: String
+    public var durationSeconds: Double?
+    public var model: String
+    public var language: String?
+    public var detectedLanguage: String?
+    public var status: String
+    public var progress: Double
+    public var stage: String?
+    public var errorMessage: String?
+    public var wordCount: Int?
+    public var createdAt: Date
+    public var segments: [Segment]
+    public init(id: String = UUID().uuidString, originalFilename: String,
+                durationSeconds: Double? = nil, model: String, language: String? = nil,
+                detectedLanguage: String? = nil, status: String = "queued", progress: Double = 0,
+                stage: String? = nil, errorMessage: String? = nil, wordCount: Int? = nil,
+                createdAt: Date = Date(), segments: [Segment] = []) {
+        self.id = id; self.originalFilename = originalFilename
+        self.durationSeconds = durationSeconds; self.model = model; self.language = language
+        self.detectedLanguage = detectedLanguage; self.status = status; self.progress = progress
+        self.stage = stage; self.errorMessage = errorMessage; self.wordCount = wordCount
+        self.createdAt = createdAt; self.segments = segments
+    }
 }
 
 public enum APIJSON {
@@ -66,11 +81,19 @@ public struct TranscriptionRequest: Sendable {
     public let fileURL: URL
     public let model: String?
     public let language: String?
+    public let jobID: String
+    public let resumeSeconds: Double
+    public let existingSegments: [Segment]
 
-    public init(fileURL: URL, model: String? = nil, language: String? = nil) {
+    public init(fileURL: URL, model: String? = nil, language: String? = nil,
+                jobID: String = UUID().uuidString, resumeSeconds: Double = 0,
+                existingSegments: [Segment] = []) {
         self.fileURL = fileURL
         self.model = model
         self.language = language
+        self.jobID = jobID
+        self.resumeSeconds = resumeSeconds
+        self.existingSegments = existingSegments
     }
 }
 

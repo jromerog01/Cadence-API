@@ -1,0 +1,23 @@
+{
+  "original_filename": "reunión con Ana.m4a",
+  "model": "small",
+  "language": null,
+  "detected_language": "es",
+  "duration_seconds": 63.25,
+  "segments": [
+    {
+      "idx": 0,
+      "start_seconds": 0.0,
+      "end_seconds": 1.5,
+      "text": "Hola, mundo.",
+      "speaker": null
+    },
+    {
+      "idx": 1,
+      "start_seconds": 1.5,
+      "end_seconds": 63.25,
+      "text": "Segunda frase: \"sí\".",
+      "speaker": "Ana"
+    }
+  ]
+}
